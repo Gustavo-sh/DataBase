@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Matriz de Distribuição</title>
+    <script src="/static/js/libs/htmx.min.js"></script>
+
+    <link rel="stylesheet" href="/static/css/libs/flatpickr.min.css">
+    <script src="/static/js/libs/flatpickr.min.js"></script>
+    <script src="/static/js/libs/pt.js"></script>
+    
+    <link rel="stylesheet" href="/static/css/libs/choices.min.css" />
+    <script src="/static/js/libs/choices.min.js"></script>
+
+    <!-- <link rel="stylesheet" href="{{ url_for('static', path='/css/style_core.css') }}"> -->
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style_apoio_cadastro.css') }}">
+    <link rel="icon" type="image/png" href="/static/images/fav.png">
+</head>
+<body data-area="{{ area }}">
+
+    <div id="toast-global" class="toast-container"></div>
+
+    <div id="top-panel" class="top-panel-container">
+
+        <div
+            class="aecx_div">
+        </div>
+        
+        <a href="https://docs.google.com/forms/d/e/1FAIpQLSdmXd6R6mWNhxWsHVXh40uZozdGN7075_gMF-FCpI-ZZ6Yq1w/viewform?usp=header" target="_blank">Reportar Um Bug/Erro</a>
+        <a href="https://drive.google.com/file/d/1Q0ZxLll1f83_NWfJlFsNy6WumO5N6yTJ/view?usp=sharing" target="_blank">Documentação Sistema Matriz - Apoio Cadastro</a>
+        <a href="https://aeccombr.sharepoint.com/sites/GestaoRobbyson/Lists/Excees%20Matriz%20KPIs%20Robbyson/AllItems.aspx?env=WebViewList" target="_blank">Alteração de Matriz</a>
+        
+        <div id="kpi-launcher-btn">Gerar um Novo Indicador</div>
+
+        <form action="/logout" method="post">
+            <button type="submit" class="logout-btn">Sair</button>
+        </form>
+
+        <div
+            class="robby_div">
+        </div>
+    </div>
+
+    <div id="internal-error" class="erro-fixo oculto" role="alert" aria-live="assertive"></div>
+
+    <div id="kpi-launcher-panel">
+        <div class="launcher-header">
+            <span>Gerar um Novo Indicador</span>
+            <button id="close-launcher">✖</button>
+        </div>
+        <div class="form-container">
+            <form hx-post="/add" hx-target="#registros" hx-swap="innerHTML" class="form-grid">
+                
+                <div>
+                    <label>ID - Nome Indicador: *</label>
+                    <select name="nome" id="indicadores">
+                        <option value="">Selecione ou pesquise...</option>
+                        {% for ind in indicadores %}
+                            <option value="{{ ind.id }} - {{ ind.text }}"
+                                    data-acumulado="{{ ind.acumulado }}"
+                                    data-esquema="{{ ind.esquema_acumulado }}"
+                                    data-formato="{{ ind.formato }}">
+                                {{ ind.id }} - {{ ind.text }}
+                            </option>
+                        {% endfor %}
+                    </select>
+
+                    <label>Meta: *</label>
+                    <input type="text" name="meta" id="meta_input" placeholder="Selecione um indicador">
+
+                    <label>Moedas: *</label>
+                    <input type="number" name="moeda">
+
+                    <label>Tipo Indicador:</label>
+                    <input type="text" name="tipo_indicador" id="formato_input" value="" readonly>
+
+                    <label>Data Início: *</label>
+                    <input type="text" id="data_inicio" name="data_inicio" value="">
+
+                    <label>Data Fim: *</label>
+                    <input type="text" id="data_fim" name="data_fim" value="">
+
+                    <label>Periodo:</label>
+                    <input type="text" name="periodo" id="periodo_input" value="" readonly>
+                </div>
+
+                <div>
+                    
+                    <label>Escala: *</label>
+                    <select name="escala" id="escala_select">
+                        <option value="6x1">6x1</option>
+                        <option value="5x2">5x2</option>
+                    </select>
+
+                    <label>Tipo de Faturamento: *</label>
+                    <select name="tipo_faturamento" id="tipo_faturamento">
+                        <option value="">Selecione...</option>
+                        <option value="Ônus">Ônus</option>
+                        <option value="Ônus e Bônus">Ônus e Bônus</option>
+                        <option value="Receita">Receita</option>
+                        <option value="Relacionamento">Relacionamento</option>
+                        <option value="Controle">Controle</option>
+                    </select>
+                    
+                    <label>Critério: *</label>
+                    <select name="criterio_final" id="criterio_final">
+                        <option value="">Selecione...</option>
+                        <option value="Meta AeC">Meta AeC</option>
+                        <option value="Meta Cliente">Meta Cliente</option>
+                        <option value="Meta Smart">Meta Smart</option>
+                    </select>
+
+                    <!-- <label>Área: *</label>
+                    <select name="area" id="area">
+                        <option value="">Selecione...</option>
+                        <option value="Operação">Operação</option>
+                        <option value="Qualidade">Qualidade</option>
+                        <option value="Planejamento">Planejamento</option>
+                    </select>
+
+                    <label>Responsavel: *</label>
+                    <input type="text" name="responsavel"> -->
+
+                    <label>Gerente:</label>
+                    <input type="text" name="gerente" id="gerente_input" value="" readonly>
+
+                    <input type="hidden" id="atributo_hidden" name="atributo" value="">
+
+                    <label>Acumulado:</label>
+                    <input type="text" name="acumulado" id="acumulado_input" value="" readonly>
+
+                    <label>Esquema Acumulado:</label>
+                    <input type="text" name="esquema_acumulado" id="esquema_input" value="" readonly>
+
+                    <label>Tipo Matriz:</label>
+                    <input type="text" name="tipo_matriz" id="tipomatriz_select" value="" readonly>
+                </div>
+
+                <!-- <div class="mensagens-indicador" id="mensagens-indicador"></div> -->
+                
+                <div class="form-submit">
+                    <button type="submit" class="button-submit-form">Enviar</button>
+                </div>
+                
+            </form>
+            
+        </div>
+    </div>
+
+    <!-- BACKDROP -->
+    <div id="launcher-backdrop"></div>
+
+    <div class="titulo-principal">
+        <h2>Matriz de Distribuição - Cadastro Administrativo</h2>        
+    </div>
+
+    <div class="container">
+        <div class="user-info">
+            <div class="filtros-left">
+                <label>Usuário:</label>
+                <input type="text" name="username" id="username" value="{{ username or '' }}" readonly>
+
+                <div id="atributos-container">
+                    <label>Atributo: *</label>
+                    <select name="atributo" id="atributo_select" onchange="handleAtributoChange(this)">
+                        <option value="">Selecione ou pesquise...</option>
+                        {% for at in atributos %}
+                            <option value="{{ at['atributo'] }}"
+                            data-gerente="{{ at['gerente'] }}"
+                            data-tipo="{{ at['tipo'] }}">{{ at['atributo'] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <!-- <div id="mensagens-filtro" class="mensagens-filtro"></div> -->
+
+            <div class="filtros-right">
+                <button
+                    type="button"
+                    id="btn-m0"
+                    hx-get="/pesquisar_mes" 
+                    hx-target="#tabela-pesquisa" 
+                    hx-swap="innerHTML"
+                    hx-include="[id='atributo_select']"
+                    hx-vals='{"mes": "m0"}'>
+                    Pesquisar Mes Atual
+                </button>
+
+                <button
+                    type="button"
+                    id="btn-m1"
+                    hx-get="/pesquisar_mes" 
+                    hx-target="#tabela-pesquisa" 
+                    hx-swap="innerHTML"
+                    hx-include="[id='atributo_select']"
+                    hx-vals='{"mes": "m1"}'>
+                    Pesquisar Mes Anterior
+                </button>
+
+                <button
+                    type="button"
+                    id="btn-mmais1"
+                    hx-get="/pesquisar_mes" 
+                    hx-target="#tabela-pesquisa" 
+                    hx-swap="innerHTML"
+                    hx-include="[id='atributo_select']"
+                    hx-vals='{"mes": "m+1"}'>
+                    Pesquisar Mes Seguinte
+                </button>
+            </div>
+
+            <!-- <button
+                id="all_m0"
+                type="button"
+                hx-post="/allatributesapoio" 
+                hx-target="#tabela-pesquisa"
+                hx-swap="innerHTML"
+                hx-vals='{"tipo_pesquisa": "m0_all_apoio"}'>
+                Pesquisar Todos os Atributos Mês Atual
+            </button>
+
+            <button
+                id="all_m1"
+                type="button"
+                hx-post="/allatributesapoio" 
+                hx-target="#tabela-pesquisa"
+                hx-swap="innerHTML"
+                hx-vals='{"tipo_pesquisa": "m1_all_apoio"}'>
+                Pesquisar Todos os Atributos Mês Anterior
+            </button>
+
+            <button
+                id="all_m+1"
+                type="button"
+                hx-post="/allatributesapoio" 
+                hx-target="#tabela-pesquisa"
+                hx-swap="innerHTML"
+                hx-vals='{"tipo_pesquisa": "m+1_all_apoio"}'>
+                Pesquisar Todos os Atributos Mês Seguinte
+            </button> -->
+
+        </div>
+
+        
+        
+    </div>
+
+    <div class="registros">
+        <h3>Resultado por Atributo</h3>
+        <button type="button" id="export-btn" class="export-btn">Export para Excel</button>
+        <form id="form-acordo" 
+            hx-post="/processar_acordo" 
+            hx-target="#tabela-pesquisa" 
+            hx-swap="innerHTML"
+            hx-include="#tabela-pesquisa input[name='registro_ids']:checked">
+
+            <div class="table-container">
+                <table class="tabela-pesquisa">
+                    <thead>
+                        <tr>
+                            <th>Selects</th>
+                            <th>Atributo</th>
+                            <th>Id - Nome Indicador</th>
+                            <th>Meta Sugerida</th>
+                            <th>Resultado</th>
+                            <th>Atingimento</th>
+                            <th>Meta</th>
+                            <th>Moedas</th>
+                            <th>Tipo Indicador</th>
+                            <th>Acumulado</th>
+                            <th>Esquema Acumulado</th>
+                            <th>Tipo Matriz</th>
+                            <th>Data Inicio</th>
+                            <th>Data Fim</th>
+                            <th>Periodo</th>
+                            <th>Escala</th>
+                            <th>Tipo de Faturamento</th>
+                            <th>Descrição</th>
+                            <th>Ativo</th>
+                            <th>Chamado</th>
+                            <th>Criterio</th>
+                            <!-- <th>Area</th>
+                            <th>Responsavel</th> -->
+                            <th>Gerente</th>
+                            <th>Possui DMM</th>
+                            <th>Submetido Por</th>
+                            <th>Data Sub Por</th>
+                            <th>Exop</th>
+                            <th>Da Exop</th>
+                            <th>Data Da Exop</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabela-pesquisa">
+                        <!-- preenchido via HTMX -->
+                    </tbody>
+                </table>
+            </div>
+
+            <button 
+                type="button" 
+                id="selecionar-tudo-btn" 
+                class="select-all">
+                Selecionar Tudo
+            </button>
+            
+            <input type="hidden" name="cache_key" id="cache_key_pesquisa" value="">
+            <input type="hidden" name="tipo_pesquisa_admapoio" id="tipo_pesquisa_admapoio" value="">
+            <!-- <h4>Selecione os registros que deseja dar acordo, não acordo ou duplicar antes de clicar nos botões abaixo.</h4> -->
+            <!-- <div style="display: flex; gap: 10px; margin-top: 15px; justify-content: center;">
+                <button type="submit" 
+                        name="status_acao" 
+                        value="Acordo" 
+                        class="btn-acordo"
+                        hx-confirm="Confirma o Acordo para os registros selecionados?">
+                    Acordo
+                </button>
+
+                <button type="submit" 
+                        name="status_acao" 
+                        value="Nao Acordo" 
+                        class="btn-nao-acordo"
+                        hx-confirm="Confirma o Não Acordo para os registros selecionados?">
+                    Não Acordo
+                </button>
+            </div> -->
+        </form>
+
+        <div id="container-duplicar-pesquisa" class="container-duplicar-pesquisa" style="margin-top: 20px; text-align: center;">
+    
+            <div style="display: flex; justify-content: center; gap: 20px; margin-bottom: 15px;">
+                <label>Data Início:
+                    <input type="text" name="data_inicio" id="data_inicio_duplicar" placeholder="YYYY-MM-DD" class="flatpickr-input-data">
+                </label>
+                <label>Data Fim:
+                    <input type="text" name="data_fim" id="data_fim_duplicar" placeholder="YYYY-MM-DD" class="flatpickr-input-data">
+                </label>
+                <label>Período:
+                    <input type="text" name="periodo" id="periodo_duplicar" class="flatpickr-input-data" placeholder="Selecione data-inicio" value="" readonly>
+                </label>
+
+            </div>
+
+            <form hx-post="/duplicate_search_results" 
+                hx-target="#registros" 
+                hx-swap="innerHTML"
+                hx-trigger="submit" 
+                hx-include="#pesquisa-form-data, #data_inicio_duplicar, #data_fim_duplicar, #periodo_duplicar, #tabela-pesquisa input[name='registro_ids']:checked">
+                
+                <div id="pesquisa-form-data" style="display:none;">
+                    <input type="hidden" name="atributo" id="duplicar_atributo" value="">
+                    <input type="hidden" name="tipo_pesquisa" id="duplicar_tipo_pesquisa" value="">
+                </div>
+
+                <!-- <div class="mensagens-pesquisa" id="mensagens-pesquisa"></div> -->
+
+                <button type="submit" class="btn-duplicar-tabela">Duplicar Registros para Matriz</button>
+            </form>
+        </div>
+
+    </div>
+
+    <div class="registros">
+        <h3>Matriz</h3>  
+        <div class="table-container">
+            <table class="tabela-matriz">
+                <thead>
+                    <tr>
+                        <th>Ações</th>
+                        <th>Atributo</th>
+                        <th>Id - Nome Indicador</th>
+                        <th>Meta Sugerida</th>
+                        <th>Resultado</th>
+                        <th>Atingimento</th>
+                        <th>Meta</th>
+                        <th>Moedas</th>
+                        <th>Tipo Indicador</th>
+                        <th>Acumulado</th>
+                        <th>Esquema Acumulado</th>
+                        <th>Tipo Matriz</th>
+                        <th>Data Inicio</th>
+                        <th>Data Fim</th>
+                        <th>Periodo</th>
+                        <th>Escala</th>
+                        <th>Tipo de Faturamento</th>
+                        <th>Descrição</th>
+                        <th>Ativo</th>
+                        <th>Chamado</th>
+                        <th>Criterio</th>
+                        <!-- <th>Area</th>
+                        <th>Responsavel</th> -->
+                        <th>Gerente</th>
+                        <th>Possui DMM</th>
+                    </tr>
+                </thead>
+                <tbody id="registros">
+                    {% include "_registro.html" %}
+                </tbody>
+            </table>
+            
+            
+        </div>
+        <!-- <div id="mensagens-registros" class="mensagens-registros"></div> -->
+
+            <div class="clear_registros">
+                <button
+                    class="clear_registros_btn"
+                    hx-post="/clear_registros"
+                    hx-target="#registros"
+                    hx-swap="innerHTML"
+                    hx-confirm="Deseja realmente limpar a tabela?">
+                    Limpar Tabela
+                </button>
+            </div>
+
+            <div class="submit-tabela">
+            <button
+                    hx-post="/submit_table"
+                    hx-swap="none"
+                    hx-confirm="Deseja realmente submeter as informações para banco de dados?">
+                    Submeter Tabela
+                </button>
+            </div>
+
+            <!-- <div class="replicacao-container">
+                <h4>Clique na caixa abaixo e escolha os atributos para os quais quer replicar os indicadores da tabela acima.</h4>
+                <select id="atributos_replicar" name="atributos_replicar" multiple class="atributos_replicar">
+                    {% for at in atributos %}
+                        <option value="{{ at['atributo'] }}"
+                        data-gerente="{{ at['gerente'] }}"
+                        data-tipo="{{ at['tipo'] }}">{{ at['atributo'] }}</option>
+                    {% endfor %}
+                </select>
+                
+
+                <button id="btn_replicar" 
+                        class="btn_replicar"
+                        hx-post="/replicar_registros"
+                        hx-confirm="Deseja realmente replicar os registros para os atributos selecionados?"
+                        hx-include="#atributos_replicar"
+                        hx-swap="none">
+                    Replicar registros
+                </button>
+            </div> -->
+    </div>
+
+    <div id="bot-panel" class="bot-panel-container">
+        <span id="footer-year"></span>&nbsp;- Excelência Operacional, Diretoria de Customer Experience - AeC Centro de Contatos. v.1.0.0
+    </div>
+
+    <script>
+        const year = new Date().getFullYear();
+        document.getElementById("footer-year").textContent = year;
+    </script>
+
+    <!-- 🔒 Overlay para bloquear tela -->
+    <div id="overlay" style="
+        display:none;
+        position: fixed;
+        top:0; left:0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(255,255,255,0.55);
+        backdrop-filter: blur(3px);
+        z-index: 9998;
+    "></div>
+
+    <!-- ⏳ Loader Central -->
+    <div id="loader" style="
+        display:none;
+        position: fixed;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0,0,0,0.80);
+        color: white;
+        padding: 18px 26px;
+        border-radius: 10px;
+        font-size: 17px;
+        font-weight: bold;
+        z-index: 9999;
+        box-shadow: 0 0 12px rgba(0,0,0,0.3);
+    ">
+        ⏳ Processando, aguarde...
+    </div>
+
+    <script src="{{ url_for('static', path='/js/matriz_core.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/matriz_apoio_cadastro.js') }}"></script>
+
+</body>
+</html>

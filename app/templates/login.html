@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style_core.css') }}">
+    <link rel="icon" type="image/png" href="/static/images/fav.png">
+    <style>
+        .erro-login {
+            color: red;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .msg-login {
+            color: green;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body class="login-page">
+    {% if erro %}
+    <div class="erro-login">{{ erro }}</div>
+    {% endif %}
+
+    {% if msg %}
+    <div class="msg-login">{{ msg }}</div>
+    {% endif %}
+
+    <div class="login-container">
+        <h2>Acessar</h2>
+        <form method="post" action="/login">
+            <input type="text" name="username" placeholder="Usuário" required>
+            <input type="password" name="password" placeholder="Senha" required>
+            <button type="submit">Entrar</button>
+        </form>
+        <p>Não tem conta? <a href="/register">Cadastre-se</a></p>
+    </div>
+
+    <script>
+        // 🔹 Remove mensagens após 3 segundos
+        setTimeout(() => {
+            document.querySelectorAll('.erro-login, .msg-login').forEach(el => el.remove());
+        }, 3000);
+    </script>
+</body>
+</html>

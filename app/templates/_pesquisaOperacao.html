@@ -1,0 +1,43 @@
+{% for r in registros %}
+<tr 
+  class="
+    {% if r.da_exop == 1 %} linha-acordo 
+    {% elif r.da_exop == 2 %} linha-nao-acordo 
+    {% endif %}
+  "
+>
+    {% if show_checkbox %}
+    <td>
+        <input type="checkbox" name="registro_ids" value="{{ r.id }}" class="registro-checkbox"> 
+    </td>
+    {% else %}
+    <td>
+        <input type="hidden" name="registro_ids" value="N">
+    </td>
+    {% endif %}
+    <td>{{ r.atributo or ""}}</td>
+    <td>{{ r.id_nome_indicador or ""}}</td>
+    <td>{{ r.meta_sugerida or ""}}</td>
+    <td>{{ r.resultado or ""}}</td>
+    <td>{{ r.atingimento or ""}}</td>
+    <td>{{ r.meta or ""}}</td>
+    <td>{{ r.moedas or ""}}</td>
+    <td>{{ r.data_inicio or ""}}</td>
+    <td>{{ r.data_fim or ""}}</td>
+    <td>{{ r.periodo or ""}}</td>
+    <td>{{ r.ativo or ""}}</td>
+    <!-- <td>{{ r.area or ""}}</td>
+    <td>{{ r.responsavel or ""}}</td> -->
+    <td>{{ r.gerente or ""}}</td>
+    <td>{{ r.possui_dmm or ""}}</td>
+    <td>{{ r.dmm or ""}}</td>
+    <td>{{ r.submetido_por or ""}}</td>
+    <td>{{ r.data_submetido_por or ""}}</td>
+    <td>{{ r.qualidade or ""}}</td>
+    <td>{{ r.da_qualidade or ""}}</td>
+    <td>{{ r.planejamento or ""}}</td>
+    <td>{{ r.da_planejamento or ""}}</td>
+    <td>{{ r.exop or ""}}</td>
+    <td>{{ r.da_exop or ""}}</td>
+</tr>
+{% endfor %}

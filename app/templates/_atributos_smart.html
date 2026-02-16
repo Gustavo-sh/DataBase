@@ -1,0 +1,15 @@
+<select name="atributo" id="atributo_select">
+    <option value="">Selecione ou pesquise...</option>
+    {% for at in atributos %}
+        <option value="{{ at['atributo'] }}"
+                data-gerente="{{ at['gerente'] }}"
+                data-operacao="{{ at['operacao'] }}"
+                data-tipo="{{ at['tipo'] }}"
+                data-da-qualidade="{{ at['da_qualidade'] }}"
+                data-da-planejamento="{{ at['da_planejamento'] }}"
+                data-da-exop="{{ at['da_exop'] }}"
+                data-periodo="{{ at['periodo'] }}">
+            {{ at['atributo'] }},  {{ at['periodo'] }}
+        </option>
+    {% endfor %}
+</select>

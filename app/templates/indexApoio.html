@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Matriz de Distribuição</title>
+    <script src="/static/js/libs/htmx.min.js"></script>
+
+    <link rel="stylesheet" href="/static/css/libs/flatpickr.min.css">
+    <script src="/static/js/libs/flatpickr.min.js"></script>
+    <script src="/static/js/libs/pt.js"></script>
+    
+    <link rel="stylesheet" href="/static/css/libs/choices.min.css" />
+    <script src="/static/js/libs/choices.min.js"></script>
+
+    <!-- <link rel="stylesheet" href="{{ url_for('static', path='/css/style_core.css') }}"> -->
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style_apoio.css') }}">
+    <link rel="icon" type="image/png" href="/static/images/fav.png">
+</head>
+<body data-area="{{ area }}">
+
+    <div id="toast-global" class="toast-container"></div>
+
+    <div id="top-panel" class="top-panel-container">
+
+        <div
+            class="aecx_div">
+        </div>
+        
+        <a href="https://docs.google.com/forms/d/e/1FAIpQLSdmXd6R6mWNhxWsHVXh40uZozdGN7075_gMF-FCpI-ZZ6Yq1w/viewform?usp=header" target="_blank">Reportar Um Bug/Erro</a>
+        <a href="https://drive.google.com/file/d/1fou5ka22PGp5TgUL7b3O0_NG20SBEPHa/view?usp=sharing" target="_blank">Documentação Sistema Matriz- Apoio</a>
+        <a href="/matriz/apoio/cadastro">Cadastrar Matriz Administrativa</a>
+        
+        <form action="/logout" method="post">
+            <button type="submit" class="logout-btn">Sair</button>
+        </form>
+
+        <div
+            class="robby_div">
+        </div>
+    </div>
+
+    <div id="internal-error" class="erro-fixo oculto" role="alert" aria-live="assertive">
+    </div>
+
+
+    <div class="titulo-principal">
+        <h2>Matriz de Distribuição - Areas de Apoio</h2>        
+    </div>
+
+
+    <div class="container">
+        <div class="user-info">
+            <div class="filtros-left">
+
+                <label>Usuário:</label>
+                <input type="text" name="username" id="username" value="{{ username or '' }}" readonly>
+
+                <div id="atributos-container">
+                    <label>Atributo: *</label>
+                    <!-- <select name="atributo" id="atributo_select" onchange="handleAtributoChange(this)">
+                        <option value="">Selecione ou pesquise...</option>
+                        {% for at in atributos %}
+                            <option value="{{ at['atributo'] }}"
+                            data-gerente="{{ at['gerente'] }}"
+                            data-tipo="{{ at['tipo'] }}">{{ at['atributo'] }}</option>
+                        {% endfor %}
+                    </select> -->
+
+                    <div
+                    id="lista-atributos-smart-apoio"
+                    hx-get="/partials/atributos-smart-apoio"
+                    hx-trigger="load, refreshAtributosSmart from:body"
+                    hx-swap="innerHTML">
+                    </div>
+                </div>
+            </div>
+
+            <!-- <div id="mensagens-filtro" class="mensagens-filtro"></div> -->
+
+            <div class="filtros-right">
+
+                <button
+                    type="button"
+                    id="btn-m0"
+                    hx-get="/pesquisar_mes" 
+                    hx-target="#tabela-pesquisa" 
+                    hx-swap="innerHTML"
+                    hx-include="[id='atributo_select']"
+                    hx-vals='{"mes": "m0"}'>
+                    Pesquisar Mes Atual
+                </button>
+
+                <button
+                    type="button"
+                    id="btn-m1"
+                    hx-get="/pesquisar_mes" 
+                    hx-target="#tabela-pesquisa" 
+                    hx-swap="innerHTML"
+                    hx-include="[id='atributo_select']"
+                    hx-vals='{"mes": "m1"}'>
+                    Pesquisar Mes Anterior
+                </button>
+
+                <button
+                    type="button"
+                    id="btn-mmais1"
+                    hx-get="/pesquisar_mes" 
+                    hx-target="#tabela-pesquisa" 
+                    hx-swap="innerHTML"
+                    hx-include="[id='atributo_select']"
+                    hx-vals='{"mes": "m+1"}'>
+                    Pesquisar Mes Seguinte
+                </button>
+            </div>
+
+        </div>
+
+        {% if role == "apoio planejamento" %}
+        <form hx-post="/update_dmm"
+                hx-target="#tabela-pesquisa"
+                hx-swap="innerHTML"
+                hx-include="#cache_key_pesquisa"
+                hx-confirm="Confirma a alteração do DMM para os registros selecionados?">
+            <div class="dmm-container">
+                <h4>DMM</h4>  
+                <label>Possui DMM: *</label>
+                <div class="radio-group" id="possuiDmm_apoio">
+                    <label><input type="radio" name="possuiDmm_apoio" value="Sim" checked> Sim</label>
+                    <label><input type="radio" name="possuiDmm_apoio" value="Não"> Não</label>
+                </div>
+
+                <label>DMM:</label>
+                <input type="text" id="dmm_apoio" name="dmm_apoio" placeholder="Selecione as datas, caso haja">
+                <button type="submit">Alterar DMM</button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+
+    <div id="pesquisa-form-data" style="display:none;">
+        <input type="hidden" name="atributo" id="duplicar_atributo" value="">
+        <input type="hidden" name="tipo_pesquisa" id="duplicar_tipo_pesquisa" value="">
+    </div>
+
+    <div class="registros">
+        <h3>Resultado por Atributo</h3>
+        <button type="button" id="export-btn" class="export-btn">Export para Excel</button>
+        <form id="form-acordo" 
+            hx-post="/processar_acordo" 
+            hx-target="#tabela-pesquisa" 
+            hx-swap="innerHTML"
+            hx-include="#tabela-pesquisa input[name='registro_ids']:checked, #pesquisa-form-data">
+
+            <div class="table-container">
+                <table class="tabela-pesquisa">
+                    <thead>
+                        <tr>
+                            <th>Selects</th>
+                            <th>Atributo</th>
+                            <th>Id - Nome Indicador</th>
+                            <th>Meta Sugerida</th>
+                            <th>Resultado</th>
+                            <th>Atingimento</th>
+                            <th>Meta</th>
+                            <th>Moedas</th>
+                            <th>Tipo Indicador</th>
+                            <th>Acumulado</th>
+                            <th>Esquema Acumulado</th>
+                            <th>Tipo Matriz</th>
+                            <th>Data Inicio</th>
+                            <th>Data Fim</th>
+                            <th>Periodo</th>
+                            <th>Escala</th>
+                            <th>Tipo de Faturamento</th>
+                            <th>Descrição</th>
+                            <th>Ativo</th>
+                            <th>Chamado</th>
+                            <th>Criterio</th>
+                            <!-- <th>Area</th>
+                            <th>Responsavel</th> -->
+                            <th>Gerente</th>
+                            <th>Possui DMM</th>
+                            <th>DMM</th>
+                            <th>Submetido Por</th>
+                            <th>Data Sub Por</th>
+                            <th>Qualidade</th>
+                            <th>Da Qualidade</th>
+                            <th>Data Da Qualidade</th>
+                            <th>Planejamento</th>
+                            <th>Da Planejamento</th>
+                            <th>Data Da Planejamento</th>
+                            <th>Exop</th>
+                            <th>Da Exop</th>
+                            <th>Data Da Exop</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabela-pesquisa">
+                        <!-- preenchido via HTMX -->
+                    </tbody>
+                </table>
+            </div>
+
+            <button 
+                type="button" 
+                id="selecionar-tudo-btn" 
+                class="select-all">
+                Selecionar Tudo
+            </button>
+
+            
+            
+            <input type="hidden" name="cache_key" id="cache_key_pesquisa" value="">
+            <input type="hidden" name="tipo_pesquisa_admapoio" id="tipo_pesquisa_admapoio" value="">
+            <div style="display: flex; gap: 10px; margin-top: 15px; justify-content: center;">
+                <button type="submit" 
+                        name="status_acao" 
+                        value="Acordo" 
+                        class="btn-acordo"
+                        hx-confirm="Confirma o Acordo para o atributo selecionado?">
+                    De Acordo Com A Matriz
+                </button>
+
+                <button type="submit" 
+                        name="status_acao" 
+                        value="Nao Acordo" 
+                        class="btn-nao-acordo"
+                        hx-confirm="Confirma o Não Acordo para o atributo selecionado?">
+                    Não Acordo Com Moedas
+                </button>
+            </div>
+        </form>
+
+        <!-- <div class="mensagens-pesquisa" id="mensagens-pesquisa"></div> -->
+
+        <div class="container_mmd">
+            <form hx-post="/update_meta_moedas" 
+                  hx-target="#tabela-pesquisa" 
+                  class="form-mmd" 
+                  hx-swap="innerHTML" 
+                  hx-include="#tabela-pesquisa input[name='registro_ids']:checked, #cache_key_pesquisa"
+                  hx-confirm="Confirma a alteração da meta para os registros selecionados? Ao definir a nova meta você automaticamente dá o de acordo para os indicadores alterados.">
+                <div style="display: flex; justify-content: center; gap: 20px; margin-bottom: 15px;">
+                    <label>Nova Meta: *
+                        <input type="text" name="meta_duplicar" id="meta_duplicar" class="inputs_form_mmd">
+                    </label>
+
+                    <!-- <label>Nova Moeda: * -->
+                        <input type="hidden" name="moedas_duplicar" id="moedas_duplicar" class="inputs_form_mmd">
+                    <!-- </label> -->
+
+                    <!-- <label>Motivo (Quem soliciou, Quando, Meta anterior, Moeda anterior): *
+                        <input type="text" name="descricao_duplicar" id="descricao_duplicar" class="inputs_form_mmd">
+                    </label> -->
+                </div>
+                <button type="submit">Alterar Meta</button>
+            </form>
+        </div>
+
+        <div id="pesquisa-form-data" style="display:none;">
+            <input type="hidden" name="atributo" id="duplicar_atributo" value="">
+            <input type="hidden" name="tipo_pesquisa" id="duplicar_tipo_pesquisa" value="">
+        </div>
+    </div>
+
+    <div id="bot-panel" class="bot-panel-container">
+        <span id="footer-year"></span>&nbsp;- Excelência Operacional, Diretoria de Customer Experience - AeC Centro de Contatos. v.1.0.0
+    </div>
+
+    <script>
+        const year = new Date().getFullYear();
+        document.getElementById("footer-year").textContent = year;
+    </script>
+
+    <!-- 🔒 Overlay para bloquear tela -->
+    <div id="overlay" style="
+        display:none;
+        position: fixed;
+        top:0; left:0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(255,255,255,0.55);
+        backdrop-filter: blur(3px);
+        z-index: 9998;
+    "></div>
+
+    <!-- ⏳ Loader Central -->
+    <div id="loader" style="
+        display:none;
+        position: fixed;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0,0,0,0.80);
+        color: white;
+        padding: 18px 26px;
+        border-radius: 10px;
+        font-size: 17px;
+        font-weight: bold;
+        z-index: 9999;
+        box-shadow: 0 0 12px rgba(0,0,0,0.3);
+    ">
+        ⏳ Processando, aguarde...
+    </div>
+
+    <script src="{{ url_for('static', path='/js/matriz_core.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/matriz_apoio.js') }}"></script>
+
+</body>
+</html>

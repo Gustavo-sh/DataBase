@@ -1,0 +1,46 @@
+{% for row in registros %}
+<tr>
+    <td>
+        <div class="delete_line">
+            <button hx-post="/delete/{{ row.id }}" 
+                    hx-target="#registros" 
+                    hx-swap="innerHTML">Excluir</button>
+        </div>
+    </td>
+    <td>{{ row.atributo or "" }}</td>
+    <td>{{ row.id_nome_indicador or "" }}</td>
+    <td>{{ row.meta_sugerida or "" }}</td>
+    <td>{{ row.resultado or "" }}</td>
+    <td>{{ row.atingimento or "" }}</td>
+    <td hx-trigger="dblclick"
+        hx-get="/edit_campo/{{ row.id }}/meta"  hx-target="this"
+        hx-swap="outerHTML">
+        {{ row.meta or "" }}</td>
+    <td hx-trigger="dblclick"
+        hx-get="/edit_campo/{{ row.id }}/moeda" hx-target="this"
+        hx-swap="outerHTML">
+        {{ row.moedas or "" }}</td>
+    <td>{{ row.tipo_indicador or "" }}</td>
+    <td>{{ row.acumulado or "" }}</td>
+    <td>{{ row.esquema_acumulado or "" }}</td>
+    <td>{{ row.tipo_matriz or "" }}</td>
+    <td>{{ row.data_inicio or "" }}</td>
+    <td>{{ row.data_fim or "" }}</td>
+    <td>{{ row.periodo or "" }}</td>
+    <td>{{ row.escala or "" }}</td>
+    <td>{{ row.tipo_de_faturamento or "" }}</td>
+    <td>{{ row.descricao or "" }}</td>
+    <td hx-trigger="dblclick"
+        hx-get="/edit_campo/{{ row.id }}/ativo"  hx-target="this"
+        hx-swap="outerHTML">
+        {{ row.ativo or "" }}
+    </td>
+    <td>{{ row.chamado or "" }}</td>
+    <td>{{ row.criterio or "" }}</td>
+    <!-- <td>{{ row.area or "" }}</td>
+    <td>{{ row.responsavel or "" }}</td> -->
+    <td>{{ row.gerente or "" }}</td>
+    <td>{{ row.possui_dmm or "" }}</td>
+    <td>{{ row.dmm or "" }}</td>
+</tr>
+{% endfor %}

@@ -1,0 +1,901 @@
+/* ===== Layout geral ===== */
+body {
+  font-family: Arial, sans-serif;
+  background: url("/static/images/fundo6.png") no-repeat center center fixed;
+  background-size: cover;
+  color: #222;
+  display: flex;
+  flex-direction: column;
+  align-items: center; 
+  padding: 20px;
+  min-height: 100vh;
+}
+
+h2, h3 {
+  margin-top: 10px;
+  margin-bottom: 15px;
+  font-weight: bold;
+  color: #fff;
+  text-align: center;
+  width: 100%;
+}
+
+h4 , h5{
+  margin-top: 3px;
+  margin-bottom: 10px;
+  font-weight: bold;
+  color: #254c98;
+  text-align: center;
+  width: 100%;
+}
+
+.titulo-principal {
+  display: flex;
+  justify-content: center;
+  width: 680px;
+  margin-bottom: 20px;
+}
+
+/* ===== Botão logout ===== */
+.logout-btn {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: #dc3545;
+  color: #fff;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s ease-in-out;
+  box-shadow: 0px 2px 6px rgba(0,0,0,0.15);
+}
+.logout-btn:hover { background: #a71d2a; }
+
+/* ===== Containers ===== */
+.container {
+  display: flex;
+  gap: 20px;
+  justify-content: left;
+  align-items: stretch;
+  margin-bottom: 20px;
+}
+
+.user-info,
+.form-container {
+  background: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0px 2px 8px rgba(0,0,0,0.1);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+.user-info { width: 600px;}
+.form-container { width: 900px; }
+
+/* ===== Labels e Inputs ===== */
+.form-container label,
+.user-info label,
+.container-duplicar-pesquisa label,
+.form-mmd label {
+  display: block;
+  font-size: 13px;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  background: linear-gradient(135deg, #e3f2fd, #f1f8ff);
+  border-radius: 4px;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.form-container input:not([type="radio"]),
+.user-info input,
+.flatpickr-input-data,
+.form-mmd input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 14px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-sizing: border-box;
+  font-size: 14px;
+  transition: all 0.2s ease-in-out;
+}
+.form-container input:focus,
+.user-info input:focus,
+.flatpickr-input-data:focus,
+.form-mmd input:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 4px rgba(0,123,255,0.4);
+  outline: none;
+}
+
+.flatpickr-input-data-esp {
+  width: 350px;
+  padding: 10px;
+  margin-bottom: 14px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-sizing: border-box;
+  font-size: 14px;
+  transition: all 0.2s ease-in-out;
+}
+.flatpickr-input-data-esp:focus  {
+  border-color: #007bff;
+  box-shadow: 0 0 4px rgba(0,123,255,0.4);
+  outline: none;
+}
+
+/* ===== Botões ===== */
+.form-container button, 
+.user-info button {
+  width: 80%;
+  padding: 10px;
+  margin-top: 18px;
+  background: #007bff;
+  color: #fff;
+  font-weight: bold;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s ease-in-out;
+  align-self: center;
+}
+.form-container button:hover, 
+.user-info button:hover { background: #0056b3; }
+
+/* ===== Radios ===== */
+.radio-group {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  justify-content: center;
+  margin: 17px 0;
+}
+.radio-group label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  font-weight: normal;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+/* ===== Registros (tabelas) ===== */
+.registros {
+  background: #fff;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0px 2px 6px rgba(0,0,0,0.1);
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.table-container {
+  width: 100%;
+  max-height: 420px;
+  overflow-y: auto;
+  border-radius: 8px;
+  box-shadow: 0px 4px 10px rgba(0,0,0,0.1);
+  overflow-x: auto;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ===== Tabela Pesquisa ===== */
+.tabela-pesquisa {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  table-layout: auto;           /* pode manter auto */
+  border-spacing: 0;            /* evita “folga” com sticky */
+}
+.tabela-pesquisa th,
+.tabela-pesquisa td {
+  padding: 12px 18px;
+  text-align: center;
+  border-bottom: 1px solid #ddd;
+  white-space: nowrap;          /* impede quebra de linha */
+  background-clip: padding-box; /* evita “costura” nas colunas fixas */
+}
+.tabela-pesquisa th {
+  background: #007BFF !important;
+  color: #fff;
+  font-weight: bold;
+  position: sticky;
+  top: 0;                       /* header congelado verticalmente */
+  z-index: 4;                   /* maior que as células */
+}
+.tabela-pesquisa tr:hover { background: #f5f5f5; }
+
+/* ===== COLUNAS FIXAS (1ª, 2ª e 3ª) =====
+   >>> Ajuste os widths conforme sua tabela <<<
+   c1_w = 80px; c2_w = 340px; c3_w = 260px (exemplo)
+*/
+
+/* 1ª coluna (Selects) */
+.tabela-pesquisa th:nth-child(1),
+.tabela-pesquisa td:nth-child(1) {
+  position: sticky;
+  left: 0;
+  z-index: 5;                   /* acima das demais células */
+  background-color: #fff;
+  width: 80px;                  /* c1_w */
+  min-width: 80px;
+  box-shadow: 2px 0 3px rgba(0,0,0,.06);
+}
+
+/* 2ª coluna (Atributo) */
+.tabela-pesquisa th:nth-child(2),
+.tabela-pesquisa td:nth-child(2) {
+  position: sticky;
+  left: 80px;                   /* = c1_w */
+  z-index: 5;
+  background-color: #fff;
+  width: 450px;                 /* c2_w */
+  min-width: 450px;
+  box-shadow: 2px 0 3px rgba(0,0,0,.06);
+}
+
+/* 3ª coluna (Id - Nome Indicador) */
+.tabela-pesquisa th:nth-child(3),
+.tabela-pesquisa td:nth-child(3) {
+  position: sticky;
+  left: calc(80px + 450px);     /* = c1_w + c2_w */
+  z-index: 5;
+  background-color: #fff;
+  width: 260px;                 /* c3_w */
+  min-width: 260px;
+  box-shadow: 2px 0 3px rgba(0,0,0,.06);
+}
+
+.tabela-pesquisa th:nth-child(1),
+.tabela-pesquisa th:nth-child(2),
+.tabela-pesquisa th:nth-child(3) {
+  top: 0;           /* mantém fixo verticalmente */
+  z-index: 6;       /* acima das células normais */
+  background: #007BFF !important; /* mantém azul */
+  color: #fff;
+}
+/* ===== Tabela Matriz ===== */
+.tabela-matriz {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fafafa;
+  table-layout: auto;
+}
+.tabela-matriz th, 
+.tabela-matriz td {
+  padding: 12px 18px;
+  text-align: center;
+  border-bottom: 1px solid #ccc;
+  white-space: nowrap;
+}
+.tabela-matriz th {
+  background: #007BFF;
+  color: white;
+  font-weight: bold;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.tabela-matriz tr:hover { background: #f1f1f1; }
+
+/* Colunas pequenas fixas */
+.tabela-matriz th:nth-child(1),
+.tabela-matriz td:nth-child(1),
+.tabela-matriz th:nth-child(16),
+.tabela-matriz td:nth-child(16),
+.tabela-matriz th:nth-child(22),
+.tabela-matriz td:nth-child(22) {
+  width: 60px;
+  text-align: center;
+}
+
+/* ===== Choices.js ajustes ===== */
+.choices__inner {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  height: auto;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.choices__list--dropdown { z-index: 9999; }
+.choices { margin-bottom: 10px !important; }
+.form-container .choices,
+.user-info .choices {
+  width: 100% !important;
+  max-width: 100% !important;
+  display: block !important;
+}
+
+/* ===== Index: grid do formulário ===== */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px 24px;
+}
+.form-grid .form-submit {
+  grid-column: span 3;
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+/* ===== Login ===== */
+body.login-page {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background: url("/static/images/login.png") no-repeat center center fixed;
+  background-size: cover;
+  margin: 0;
+}
+.login-container {
+  background: #fff;
+  padding: 30px;
+  border-radius: 8px;
+  box-shadow: 0px 4px 12px rgba(0,0,0,0.2);
+  width: 320px;
+  text-align: center;
+}
+.login-container h2 {
+  margin: 0 0 20px 0;
+  color: #333;
+  font-size: 22px;
+  font-weight: bold;
+}
+.login-container h2::after {
+  content: "";
+  display: block;
+  width: 50px;
+  height: 3px;
+  background: #007bff;
+  margin: 8px auto 0 auto;
+  border-radius: 2px;
+}
+.login-container input {
+  width: 90%;
+  padding: 10px;
+  margin: 10px 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+.login-container button {
+  width: 95%;
+  padding: 10px;
+  background: #007bff;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 15px;
+  transition: background 0.3s ease;
+}
+.login-container button:hover { background: #0056b3; }
+.login-container p { margin-top: 15px; font-size: 14px; color: #333; }
+.login-container a {
+  color: #007bff;
+  text-decoration: none;
+  font-weight: bold;
+}
+.login-container a:hover { text-decoration: underline; }
+
+/* ===== Register ===== */
+body.register-page {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background: url("/static/images/login.png") no-repeat center center fixed;
+  background-size: cover;
+  margin: 0;
+}
+.register-container {
+  background: #fff;
+  padding: 30px;
+  border-radius: 8px;
+  box-shadow: 0px 4px 12px rgba(0,0,0,0.2);
+  width: 340px;
+  text-align: center;
+}
+.register-container h2 {
+  margin: 0 0 20px 0;
+  color: #333;
+  font-size: 22px;
+  font-weight: bold;
+}
+.register-container h2::after {
+  content: "";
+  display: block;
+  width: 50px;
+  height: 3px;
+  background: #007bff;
+  margin: 8px auto 0 auto;
+  border-radius: 2px;
+}
+.register-container .input-group {
+  position: relative;
+  width: 90%;
+  margin: 10px auto;
+}
+.register-container input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+.register-container .toggle-password {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  font-size: 14px;
+  color: #666;
+}
+.register-container button {
+  width: 95%;
+  padding: 10px;
+  background: #28a745;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-top: 15px;
+  transition: background 0.3s ease;
+  font-size: 15px;
+}
+.register-container button:hover { background: #1e7e34; }
+
+.delete_line button {
+  width: 95%;
+  padding: 10px;
+  background: #db501d;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-top: 15px;
+  transition: background 0.3s ease;
+  font-size: 15px;
+}
+
+
+.submit-tabela {
+    display: flex;
+    justify-content: center;
+    padding: 20px;
+}
+
+.erro-login {
+    color: red;
+    font-weight: bold;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+/* ===== Selects customizados (Operação / Atributo) ===== */
+.user-info select,
+.form-container select {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 14px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-sizing: border-box;
+  font-size: 14px;
+  background-color: #fff;
+  transition: all 0.2s ease-in-out;
+  appearance: none; /* remove seta padrão */
+}
+
+.user-info select:focus,
+.form-container select:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 4px rgba(0,123,255,0.4);
+  outline: none;
+}
+
+/* Seta customizada */
+.user-info select,
+.form-container select {
+  background-image: url("data:image/svg+xml;utf8,<svg fill='black' height='20' viewBox='0 0 24 24' width='20' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+  padding-right: 36px; /* espaço pra seta */
+}
+
+/* Melhorias visuais no Choices.js */
+.choices__inner {
+  min-height: 40px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+}
+
+.choices__list--dropdown .choices__item {
+  padding: 10px;
+  font-size: 14px;
+}
+
+.choices__list--dropdown .choices__item--selectable:hover {
+  background: #f1f8ff;
+  color: #007bff;
+  cursor: pointer;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 14px;
+}
+
+.form-group label {
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.user-info .form-group {
+  margin-top: 8px;
+}
+
+/* ===== Ajuste de espaçamento entre botões e labels ===== */
+.user-info button {
+  margin-bottom: 12px; /* cria espaço abaixo dos botões */
+}
+
+.user-info .form-group {
+  margin-top: 8px; /* cria espaço acima dos grupos de formulário */
+}
+
+.mensagens-indicador,
+.mensagens-filtro,
+.mensagens-registros,
+.mensagens-pesquisa,
+.mensagens-import {
+  text-align: center;
+  color: rgb(34, 101, 94);
+  font-weight: 100;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.in-place-edit-input {
+    /* Estilo para garantir que o input caiba na célula da tabela */
+    width: 90%; 
+    padding: 4px;
+    margin: 0;
+    border: 1px solid #007bff;
+    border-radius: 4px;
+    box-sizing: border-box;
+    font-size: 14px; /* Garante que o texto dentro do input seja consistente */
+    text-align: center;
+}
+
+/* --- Estilos Comuns para os Botões de Ação --- */
+.btn-acordo,
+.btn-nao-acordo {
+    font-weight: bold;
+    color: #6e6bce; /* Texto branco */
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px; /* Cantos levemente arredondados */
+    cursor: pointer;
+    margin: 5px; /* Espaçamento entre eles */
+    transition: all 0.3s ease; /* Transição suave para hover */
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Sombra suave */
+    min-width: 120px; /* Garante que ambos tenham largura mínima */
+    text-transform: uppercase; /* Deixa o texto em maiúsculas */
+}
+
+/* Estado desabilitado (se necessário) */
+.btn-acordo:disabled,
+.btn-nao-acordo:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.select-all,
+.export-btn {
+	box-shadow: 0px 1px 0px 0px #f0f7fa;
+	background:linear-gradient(to bottom, #33bdef 5%, #019ad2 100%);
+	background-color:#33bdef;
+	border-radius:6px;
+	border:1px solid #057fd0;
+	display:inline-block;
+	cursor:pointer;
+	color:#ffffff;
+	font-family:Arial;
+	font-size:15px;
+	font-weight:bold;
+	padding:6px 15px;
+	text-decoration:none;
+	text-shadow:0px -1px 0px #5b6178;
+  margin: 10px;
+}
+.select-all:hover,
+.export-btn:hover {
+	background:linear-gradient(to bottom, #019ad2 5%, #33bdef 100%);
+	background-color:#019ad2;
+}
+.select-all:active,
+.export-btn:active {
+	position:relative;
+	top:1px;
+}
+
+.erro-fixo {
+    /* ESTE É O CÓDIGO CHAVE para acompanhar o scroll */
+    position: fixed; 
+    
+    /* Garante que esteja no topo da viewport */
+    top: 0;
+    
+    /* Centralização horizontal */
+    left: 50%; 
+    transform: translateX(-50%); 
+    
+    z-index: 9999; 
+    width: auto;
+    max-width: 90%;
+    
+    /* Estilos visuais */
+    padding: 15px 30px;
+    background-color: #f44336;
+    color: white;
+    text-align: center;
+    border-radius: 0 0 10px 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+    font-weight: bold;
+    font-size: 1.1em;
+    
+    /* Transições de visibilidade */
+    opacity: 1;
+    transition: opacity 0.5s, visibility 0.5s;
+}
+
+.erro-fixo.oculto {
+    opacity: 0;
+    visibility: hidden;
+}
+.erro-fixo.visivel {
+    opacity: 1;
+    visibility: visible;
+}
+
+.replicacao-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 14px;
+  padding: 10px 10px;
+}
+
+/* Contém o select (com Choices.js) sem crescer demais */
+.replicacao-container .atributos_replicar {
+  width: 600px;               /* controla a largura máxima */
+  max-width: 90%;
+  min-height: 120px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+/* Ajuste específico para o componente Choices.js */
+.replicacao-container .choices {
+  width: 600px !important;    /* largura consistente */
+  max-width: 90% !important;
+  margin: 0 auto !important;
+}
+.replicacao-container .choices__inner {
+  min-height: 120px;
+  overflow-y: auto;           /* evita crescer demais quando muitas opções */
+  text-align: left;
+}
+
+/* Botão centralizado e com largura fixa */
+.submit-tabela button ,
+.btn-duplicar-tabela,
+.form-mmd button,
+.replicacao-container .btn_replicar {
+  display: inline-block;
+  width: 220px;
+  padding: 10px;
+  background: #63cf1b;
+  color: #fff;
+  font-weight: bold;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.3s ease, transform 0.1s ease;
+  margin-top: 3px;
+}
+.submit-tabela button:hover ,
+.btn-duplicar-tabela:hover,
+.form-mmd button:hover,
+.replicacao-container .btn_replicar:hover {
+  background: #4ea814;
+  transform: scale(1.03);
+}
+
+
+.btn-justificativa {
+  display: inline-block;
+  width: 220px;
+  padding: 10px;
+  background: #cf811b;
+  color: #fff;
+  font-weight: bold;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.3s ease, transform 0.1s ease;
+  margin-top: 3px;
+}
+.btn-justificativa:hover {
+  background: #4ea814;
+  transform: scale(1.03);
+}
+
+
+.header-tab-info {
+  margin-bottom: 30px;
+}
+
+.container_mmd {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-top: 20px;
+  width: 100%;
+}
+
+.form-mmd {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
+
+.form-mmd > div {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap; /* deixa responsivo em telas pequenas */
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.form-mmd label {
+  font-size: 13px;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  background: linear-gradient(135deg, #e3f2fd, #f1f8ff);
+  border-radius: 4px;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+
+  display: flex;
+  flex-direction: column;
+  color: #333;
+  align-items: center;
+}
+
+.text_justificativa {
+  width: 600px !important;   /* largura fixa */
+  min-height: 2.5rem;        /* altura mínima confortável */
+  max-height: 6rem;          /* impede que cresça demais */
+  padding: 10px 12px;        /* espaço interno */
+  border: 1.5px solid #ccc;  /* borda neutra */
+  border-radius: 8px;        /* cantos arredondados suaves */
+  font-size: 0.95rem;
+  font-family: "Segoe UI", Roboto, sans-serif;
+  resize: vertical;           /* o usuário ainda pode expandir */
+  transition: all 0.2s ease-in-out;
+  background-color: #fafafa;
+}
+
+.text_justificativa:focus {
+  outline: none;              /* remove o highlight azul padrão */
+  border-color: #2563eb;      /* azul estilo Tailwind “blue-600” */
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  background-color: #fff;
+}
+
+.text_justificativa::placeholder {
+  color: #9ca3af;             /* cinza claro */
+  font-style: italic;
+}
+
+.bugs_doc {
+  position: absolute;
+  top: 60px;
+  right: 10px;
+  padding: 10px 16px;
+  color: #007BFF;              /* cor padrão (azul moderno) */
+  text-decoration: none;       /* remove o sublinhado padrão */
+  font-weight: 500;            /* dá um leve destaque */
+  transition: color 0.2s ease, transform 0.2s ease; /* animação suave */
+}
+
+.dropdown {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    display: inline-block;
+}
+
+.dropdown-button {
+  background-color: #007BFF;
+  color: white;
+  padding: 10px 18px;
+  font-size: 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.dropdown-button:hover {
+  background-color: #0056b3;
+}
+
+.dropdown-content {
+  display: none;
+  position: absolute;
+  background-color: #ffffff;
+  min-width: 300px;
+  box-shadow: 0px 8px 16px rgba(0,0,0,0.2);
+  border-radius: 8px;
+  margin-top: 6px;
+  z-index: 10;
+}
+
+.dropdown-content a {
+  color: #333;
+  padding: 10px 14px;
+  text-decoration: none;
+  display: block;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.dropdown-content a:hover {
+  background-color: #f0f0f0;
+}
+
+/* Mostra o menu ao passar o mouse (sem JS) */
+.dropdown:hover .dropdown-content {
+  display: block;
+}
+
+.dropdown-content.show { display: block; }
+
+.linha-acordo {
+  background-color: #d4f8d4 !important;
+}
+
+/* Vermelho - Não Acordo Exop */
+.linha-nao-acordo {
+  background-color: #f8d4d4 !important;
+}
