@@ -22,10 +22,10 @@ from app.connections_db import (
     get_atributos_adm, update_da_adm_apoio, batch_validar_submit_query, get_num_atendentes, import_from_excel, get_atributos_da_apoio, get_atributos_na_exop,
     get_acordos_apoio, get_atributos_apoio, get_atributos_gerente, update_meta_moedas_bd, get_nao_acordos_exop, get_atributos_na_apoio, get_atributos_adm_by_month,
     get_all_atributos_cadastro_apoio, get_matrizes_administrativas_pg_adm, get_matrizes_nao_cadastradas, get_matrizes_alteradas_apoio, update_dmm_bd, query_mes, 
-    get_factibilidade, insert_log_meta_moedas, get_nao_acordos_apoio,check_atribute_and_periodo_bd,get_pendencias_apoio,
+    get_factibilidade, insert_log_auditoria, get_nao_acordos_apoio,check_atribute_and_periodo_bd,get_pendencias_apoio,
 )
 from app.validations import validation_submit_table, validation_import_from_excel, validation_meta_moedas, validation_dmm, validation_datas
-from app.utils import _check_registro_scope, _check_role_or_forbid, preprocess_registros, require_htmx, validate_origin, clean_value, to_int_safe
+from app.utils import _check_registro_scope, _check_role_or_forbid, preprocess_registros, require_htmx, validate_origin, clean_value, to_int_safe, generate_cache_key
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -738,7 +738,7 @@ async def duplicate_search_results(
         path = urlparse(current_page).path.lower()
 
         page = "cadastro" if "cadastro" in path else "demais"
-        cache_key = f"pesquisa_{tipo_pesquisa}:{atributo}:{page}"
+        cache_key = generate_cache_key(1, tipo_pesquisa, atributo, page)
 
         registros_da_pesquisa = await get_from_cache(cache_key)
 
@@ -893,14 +893,20 @@ async def edit_campo_get(request: Request, registro_id: str, campo: str):
 @router.post("/processar_acordo", response_class=HTMLResponse)
 async def processar_acordo(
     request: Request, 
-    status_acao: str = Form(..., alias="status_acao"),
-    cache_key: str = Form(None, alias="cache_key")
 ):
     require_htmx(request)
     validate_origin(request)
+    form_data = await request.form()
+    tipo = next((v for v in form_data.getlist("tipo_pesquisa") if v), None)
+    atributo = next((v for v in form_data.getlist("atributo") if v), None)
+    page = next((v for v in form_data.getlist("page") if v), None)
+    status_acao = next((v for v in form_data.getlist("status_acao") if v), None)
     user = await get_current_user(request)
     _check_role_or_forbid(user, ["adm", "apoio qualidade", "apoio planejamento"])
     role = user.get("role", "default").lower().strip()
+    cache_key = generate_cache_key(1, tipo, atributo, page)
+    print(cache_key)
+    
 
     if not cache_key:
         raise HTTPException(
@@ -913,36 +919,43 @@ async def processar_acordo(
 
     try:
         registros_pesquisa = await get_from_cache(cache_key)
-    except Exception:
+    except Exception as e:
+        print(e)
         raise HTTPException(
             status_code=422,
             detail="Erro ao acessar o cache da pesquisa."
         )
-
     if not registros_pesquisa:
         raise HTTPException(
             status_code=422,
             detail="Cache de pesquisa não encontrado ou expirado. Refaça a pesquisa."
         )
-
-    current_page = request.headers.get("hx-current-url", "desconhecido")
     try:
-        path = urlparse(current_page).path.lower()
-    except Exception:
-        path = "desconhecido"
+        if len(registros_pesquisa) > 0:
+            if int(registros_pesquisa[0].get("ativo", 0)) != 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Não é possível dar acordo ou não acordo para registros que já passaram pelo DA da Exop."
+                )
+    except ValueError:
+        pass
 
-    show_das = None if "cadastro" in path else True
-
-    registros_apos_acao = []
     updates_a_executar = []
     trava_da_exop = []
+    moedas_v = 0
 
     for r in registros_pesquisa:
         atributo = str(r.get("atributo", "")).strip()
         periodo = str(r.get("periodo", "")).strip()
+        moedas_v += int(r.get("moedas", 0))
 
         updates_a_executar.append((atributo, periodo))
         trava_da_exop.append(r)
+    if moedas_v != 30 and moedas_v != 35:
+        raise HTTPException(
+            status_code=422,
+            detail="A soma das moedas da matriz deve ser 30 ou 35 para realizar a ação."
+        )
 
     if updates_a_executar:
         username = user.get("usuario")
@@ -950,7 +963,7 @@ async def processar_acordo(
         try:
             if role == "adm" and trava_da_exop[0].get("tipo_matriz").lower().strip() == "operacional":
                 for dic in trava_da_exop:
-                    if int(dic.get("da_qualidade", 0)) == 0 or int(dic.get("da_planejamento", 0)) == 0:
+                    if int(dic.get("da_qualidade", 0)) == 0 and int(dic.get("da_planejamento", 0)) == 0:
                         raise HTTPException(
                             status_code=422,
                             detail="Validação da qualidade ou do planejamento está ausente para o atributo selecionado."
@@ -1009,11 +1022,6 @@ async def processar_acordo(
     response = Response(content="", media_type="text/html")
     response.headers["HX-Trigger"] = json.dumps({
         "mostrarSucesso": {"value": "DA atualizado com sucesso! Irá refletir no sistema quando o tempo da cache expirar."},
-        "refreshAtributosDaApoio": True,
-        "refreshAtributosNaApoio": True,
-        "refreshAtributosNaExop": True,
-        "refreshAtributosM0Adm": True,
-        "refreshAtributosM1Adm": True,
         "refreshAtributosSmart": True,
     })
     return response
@@ -1095,28 +1103,31 @@ async def processar_acordo(
 async def update_meta_moedas(
     request: Request, 
     registro_ids: List[str] = Form([], alias="registro_ids"),
-    meta: str = Form(..., alias="meta_duplicar"),
-    moedas: str = Form(None, alias="moedas_duplicar"),
-    cache_key: str = Form(..., alias="cache_key") 
-):
+    meta: str = Form(None, alias="meta_duplicar"),
+    moedas: str = Form(None, alias="moedas_duplicar")
+    ):
+    form_data = await request.form()
+    tipo = next((v for v in form_data.getlist("tipo_pesquisa") if v), None)
+    atributo = next((v for v in form_data.getlist("atributo") if v), None)
+    page = next((v for v in form_data.getlist("page") if v), None)
+    cache_key = generate_cache_key(1, tipo, atributo, page)
     require_htmx(request)
     validate_origin(request)
     user = await get_current_user(request)
     username = user.get("usuario")
     role = user.get("role")
     _check_role_or_forbid(user, ["adm", "apoio qualidade", "apoio planejamento"])
-    print(moedas)
     if moedas != "" and moedas != None:
         _check_role_or_forbid(user, ["adm"])
     if not registro_ids:
         raise HTTPException(
             status_code=422,
-            detail="Selecione pelo menos um registro para alterar a meta."
+            detail="Selecione pelo menos um registro para alterar."
         )
-    if not meta:
+    if not meta and not moedas:
         raise HTTPException(
             status_code=422,
-            detail="Preencha pelo menos o campo meta para efetuar a alteração."
+            detail="Preencha pelo menos um dos campos para efetuar a alteração."
         )
     registros_pesquisa = await get_from_cache(cache_key)
     if len(registro_ids) > 1:
@@ -1126,16 +1137,21 @@ async def update_meta_moedas(
         )
     if not registros_pesquisa:
         raise HTTPException(status_code=422, detail="Cache de pesquisa não encontrado ou expirado. Refaça a pesquisa.")
+    try:
+        if len(registros_pesquisa) > 0:
+            if int(registros_pesquisa[0].get("ativo", 0)) != 0 and role != "adm":
+                raise HTTPException(
+                    status_code=422,
+                    detail="Não é possível alterar a meta para uma matriz que já passou pelo DA da Exop."
+                )
+    except ValueError:
+        pass
     ids_selecionados = set(registro_ids)
     updates_a_executar = []
     registros_selecionados = []
-    current_page = request.headers.get("hx-current-url", "desconhecido").lower()
-    path = urlparse(current_page).path.lower()
-    show_das = None
-    if "cadastro" in path:
-        show_das = None
-    else:
-        show_das = True
+    meta_v = None
+    moedas_v = None
+    dmm_v = None
     for r in registros_pesquisa:
         if str(r.get("id")) in ids_selecionados:
             erro = await validation_meta_moedas(r, meta, moedas, role)
@@ -1145,40 +1161,53 @@ async def update_meta_moedas(
             id_nome_indicador = r.get("id_nome_indicador") 
             periodo = r.get("periodo")
             data_inicio = r.get("data_inicio")
+            meta_v = meta if meta != None and meta != "" else r.get("meta")
+            moedas_v = moedas if moedas != None and moedas != "" else r.get("moedas")
+            dmm_v = r.get("dmm")
             updates_a_executar.append((atributo, periodo, id_nome_indicador, data_inicio)) 
             registros_selecionados.append(r)
     if updates_a_executar:
-        await update_meta_moedas_bd(updates_a_executar, meta, moedas, role, username, registros_pesquisa[0]["ativo"]) 
-        await insert_log_meta_moedas(registros_selecionados, meta, username)
+        await update_meta_moedas_bd(updates_a_executar, meta, moedas, role, username, registros_pesquisa[0]["ativo"])
+        await insert_log_auditoria(registros_selecionados, meta_v, moedas_v, dmm_v, username)
     for r in registros_pesquisa:
         if str(r.get("id")) in ids_selecionados:
-            if meta != "":
+            if meta != "" and meta != None:
                 r["meta"] = meta
-            if moedas != "":
+            if moedas != "" and moedas != None:
                 r["moedas"] = moedas
         if r["id_nome_indicador"].lower() == "48 - presença":
             registros_pesquisa.remove(r)
     CACHE_TTL = timedelta(minutes=1)
     await set_cache(cache_key, registros_pesquisa, CACHE_TTL)
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "_pesquisa.html", 
         {
             "request": request, 
             "registros": registros_pesquisa,
             "show_checkbox": True,
-            "show_das": show_das
+            "show_das": True
         }
     )
+    response.headers["HX-Trigger"] = json.dumps({
+            "mostrarSucesso": {"value": f"Alteração efetuada com sucesso."}
+        })
+
+    return response
 
 @router.post("/update_dmm", response_class=HTMLResponse)
 async def update_dmm(
     request: Request, 
 ):
     user = await get_current_user(request)
+    username = user.get("usuario")
     _check_role_or_forbid(user, ["adm", "apoio planejamento"])
-    form = await request.form()
-    dmm = (form.get("dmm_apoio") or "").strip()
-    cache_key = (form.get("cache_key_pesquisa_dmm") or form.get("cache_key_pesquisa") or form.get("cache_key") or "").strip()
+    form_data = await request.form()
+    tipo = next((v for v in form_data.getlist("tipo_pesquisa") if v), None)
+    atributo = next((v for v in form_data.getlist("atributo") if v), None)
+    page = next((v for v in form_data.getlist("page") if v), None)
+    print(form_data)
+    dmm = (form_data.get("dmm_apoio") or "").strip()
+    cache_key = generate_cache_key(1, tipo, atributo, page)
     erro = await validation_dmm(dmm)
     if erro:
         raise HTTPException(status_code=422, detail=erro)
@@ -1188,33 +1217,36 @@ async def update_dmm(
             detail="Coloque exatamente 5 dmms para efetuar a alteração."
         )
     registros_pesquisa = await get_from_cache(cache_key)
-    if int(registros_pesquisa[0].get("da_exop")) == 1:
-        raise HTTPException(status_code=422, detail="Não é possivel alterar o DMM de uma matriz que já tem DA da exop.")
+    try:
+        if len(registros_pesquisa) > 0:
+            if int(registros_pesquisa[0].get("ativo", 0)) != 0 and user.get("role") != "adm":
+                raise HTTPException(status_code=422, detail="Não é possivel alterar o DMM de uma matriz que já tem DA da exop.")
+    except ValueError:
+        pass
     if not registros_pesquisa:
         raise HTTPException(status_code=422, detail="Cache de pesquisa não encontrado ou expirado. Refaça a pesquisa.")
-    current_page = request.headers.get("hx-current-url", "desconhecido").lower()
-    path = urlparse(current_page).path.lower()
-    show_das = None
-    if "cadastro" in path:
-        show_das = None
-    else:
-        show_das = True
     await update_dmm_bd(registros_pesquisa[0]["atributo"], registros_pesquisa[0]["periodo"], dmm)
+    await insert_log_auditoria(registros_pesquisa, None, None, dmm, username)
     for r in registros_pesquisa:
         r["possui_dmm"] = "Sim"
         r["dmm"] = dmm
     registros_apos_acao = [dic for dic in registros_pesquisa if dic["id_nome_indicador"].lower() != "48 - presença"]
     CACHE_TTL = timedelta(minutes=1)
     await set_cache(cache_key, registros_pesquisa, CACHE_TTL)
-    return templates.TemplateResponse(
+    response =  templates.TemplateResponse(
         "_pesquisa.html", 
         {
             "request": request, 
             "registros": registros_apos_acao,
             "show_checkbox": True,
-            "show_das": show_das
+            "show_das": True
         }
     )
+    response.headers["HX-Trigger"] = json.dumps({
+            "mostrarSucesso": {"value": f"DMM alterado com sucesso."}
+        })
+
+    return response
 
 
 @router.post("/clear_registros", response_class=HTMLResponse)
@@ -1231,42 +1263,22 @@ async def clear_registros_route(request: Request):
         return HTMLResponse(content=f"<div style='color: red;'>Erro interno ao limpar os registros: {e}</div>", status_code=422)
     
 @router.get("/export_table")
-async def export_table(request: Request,  atributo: str = Query(...), tipo: str | None = Query(None, alias="duplicar_tipo_pesquisa"), cache_key: str = Query(None, alias="cache_key")):
-    # user = get_current_user(request)
-    # username = user.get("usuario")
-    # if not user:
-    #     raise HTTPException(status_code=401, detail="Sessão inválida")
-    # if not tipo:
-    #     raise HTTPException(status_code=422, detail="O tipo de pesquisa não foi recebido.")
-    
-    # current_page = request.headers.get("hx-current-url", "desconhecido")
-    # page = None
-    # path = urlparse(current_page).path.lower()
-    # if "cadastro" in path:
-    #     page = "cadastro"
-    # else:
-    #     page = "demais"
-    # possible_keys = []
-    # if tipo == "m0_all" or tipo == "m1_all" or tipo == "m+1_all":
-    #     possible_keys = [f"all_atributos:{tipo}:{username}"]
-    # elif tipo in ["m0_all_apoio", "m1_all_apoio", "m+1_all_apoio"]:
-    #     possible_keys = [f"matrizes_administrativas:{tipo}:{username}"]
-    # elif tipo in ["m0_administrativas", "m+1_administrativas"]:
-    #     possible_keys = [f"matrizes_administrativas_pg_adm:{tipo}"]
-    # else:
-    #     if not atributo:
-    #         raise HTTPException(status_code=422, detail="Informe o parâmetro 'atributo' para exportar.")
-    #     if cache_key:
-    #         possible_keys = [cache_key]
-    #     else:
-    #         tipo_map = {
-    #             "m0": f"pesquisa_m0:{atributo}:{page}",
-    #             "m1": f"pesquisa_m1:{atributo}:{page}",
-    #             "m+1": f"pesquisa_m+1:{atributo}:{page}"
-    #         }
-    #         key = tipo_map.get(tipo)
-    #         possible_keys = [key]
-
+async def export_table(request: Request):
+    form_data = request.query_params
+    print(form_data)
+    tipo = next((v for v in form_data.getlist("tipo_pesquisa") if v), None)
+    atributo = next((v for v in form_data.getlist("atributo") if v), None)
+    page = next((v for v in form_data.getlist("page") if v), None)
+    modo = next((v for v in form_data.getlist("modo") if v), None)
+    cache_key = None
+    print(tipo, atributo, page, modo)
+    if modo == "pesquisar_mes":
+        cache_key = generate_cache_key(1, tipo, atributo, page)
+    elif modo == "all_atributes_operacao":
+        username = request.cookies.get("username", "anon")
+        cache_key = generate_cache_key(2, tipo, None, None, username)
+    if not cache_key:
+        return HTTPException(status_code=422, detail="Parâmetros insuficientes para determinar o cache a ser exportado.")
     registros_pesquisa = await get_from_cache(cache_key)
 
     if not registros_pesquisa:
