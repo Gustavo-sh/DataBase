@@ -40,151 +40,6 @@ window.__mostrarToast = function (mensagem, tipo = "sucesso") {
     }, 8000);
 };
 
-/* =============================
- * 1) Pós-HTMX: mapear tipo pesquisa + preencher campos ocultos
- * ============================= */
-(function () {
-  document.body.addEventListener("htmx:afterRequest", function (evt) {
-    const xhr = evt.detail?.xhr;
-    if (!xhr || !(xhr.status >= 200 && xhr.status < 300)) return;
-
-    const url =
-    evt.detail?.elt?.getAttribute("hx-post") ||
-    evt.detail?.elt?.getAttribute("hx-get") ||
-    evt.detail?.elt?.getAttribute("hx-put") ||
-    evt.detail?.elt?.getAttribute("hx-delete") ||
-    evt.detail?.elt?.getAttribute("hx-patch") ||
-    xhr.responseURL ||
-    "";
-    if (!url) return;
-
-    const tipoPesquisaHidden = document.getElementById("duplicar_tipo_pesquisa");
-    const cacheKey = document.getElementById("cache_key_pesquisa");
-    const atributoAtual = document.getElementById("atributo_select")?.value || "";
-    const atributoAcordo = document.getElementById("acordos_select")?.value || "";
-    const atributoCascata = document.getElementById("atributo_select_cascata")?.value || "";
-    const atributoNaoAcordoExop = document.getElementById("nao_acordos_exop_select")?.value || "";
-    const atributoNaoAcordoApoio = document.getElementById("nao_acordos_apoio_select")?.value || "";
-
-    if (cacheKey) {
-    if (url.includes("/pesquisar_acordos_apoio")) {
-        cacheKey.value = `acordos_apoio:${atributoAcordo}`;
-        return;
-    } 
-    else if (url.includes("/pesquisar_nao_acordos_exop")) {
-        cacheKey.value = `nao_acordos_exop:${atributoNaoAcordoExop}`;
-        console.log("Setou cache key nao_acordos_exop");
-        return;
-    }
-    else if (url.includes("/pesquisar_nao_acordos")) {
-        cacheKey.value = `nao_acordos_apoio:${atributoNaoAcordoApoio}`;
-        return;
-    }
-    else if (url.includes("/pesquisar_acordos")) {
-        cacheKey.value = "acordos_apoio";
-        return;
-    }
-
-    }
-
-    if (cacheKey.value != "") {
-      console.log("Usou cache_key presetada >> "+cacheKey.value);
-      return;
-    }
-    
-
-    dt = null;
-    if (atributoAtual != "") {
-      dt = { tipo: tipoPesquisaHidden.value, atributo: atributoAtual };
-    } else {
-      dt = { tipo: tipoPesquisaHidden.value, atributo: atributoCascata };
-      console.log("Usou atributo cascata")
-    }
-
-    // Dispara construção da cache key
-    document.body.dispatchEvent(
-      new CustomEvent("buildCacheKey", {
-        detail: dt,
-      })
-    );
-  });
-})();
-
-
-/* =============================
- * 2) construção personalizada da cache key para os botões de pesquisar matrizes administrativas
- * ============================= */
-(function () {
-  document.addEventListener("DOMContentLoaded", function () {
-    document.body.addEventListener("click", function (evt) {
-      const btn = evt.target;
-      const username = document.getElementById("username")?.value.toString() || "unknown_user";
-      const atributoSelectM0 = document.getElementById("adm_m0_select");
-      const atributoSelectM1 = document.getElementById("adm_m1_select");
-
-      // IDs que queremos tratar
-      const idsValidos = ["m0_administrativas", "m+1_administrativas", "all_m0", "all_m1", "all_m+1"];
-      if (!idsValidos.includes(btn.id)) return;
-
-      console.log('passou pelos ids validos');
-
-      // Obtém o campo onde será alterado o valor
-      const cacheKeyInput = document.getElementById("cache_key_pesquisa");
-      if (!cacheKeyInput) return;
-
-      let novaCacheKey = null;
-
-      // Monta a nova cache key baseado no ID clicado
-      if (btn.id.includes("all_m0")) {
-        novaCacheKey = `all_atributos:m0_all:${username}`;
-      } else if (btn.id.includes("all_m1")) {
-        novaCacheKey = `all_atributos:m1_all:${username}`;
-      } else if (btn.id.includes("all_m+1")) {
-        novaCacheKey = `all_atributos:m+1_all:${username}`;
-      } else {
-        if (btn.id === "m0_administrativas") {
-          novaCacheKey = `matrizes_administrativas_pg_adm:${btn.id}:${atributoSelectM0.value}`;
-        } else if (btn.id === "m+1_administrativas") {
-          novaCacheKey = `matrizes_administrativas_pg_adm:${btn.id}:${atributoSelectM1.value}`;
-        }
-      }
-
-      cacheKeyInput.value = novaCacheKey;
-      console.log("cache_key_pesquisa atualizada para:", novaCacheKey);
-    });
-  });
-})();
-
-
-/* =============================
- * 3) Cache Key: construir e manter atualizada
- * ============================= */
-(function () {
-  document.addEventListener("DOMContentLoaded", function () {
-    document.body.addEventListener("buildCacheKey", function (evt) {
-      const cacheKeyInput = document.getElementById("cache_key_pesquisa");
-      const tipo = evt.detail?.tipo;
-      const atributo = evt.detail?.atributo;
-      let page = null;
-      const url = window.location.pathname.toLowerCase();
-      // let area = document.body.dataset.area;
-      // area = area ? area : "None";
-      if (tipo === "m0_all" || tipo === "m1_all" || tipo === "m+1_all") {
-        return;
-      }
-      if (url.includes("cadastro")) {
-        page = "cadastro";
-      } else {
-        page = "demais";
-      }
-      if (cacheKeyInput && tipo && atributo) {
-        const novaCacheKey = `pesquisa_${tipo}:${atributo}:${page}`;
-        cacheKeyInput.value = novaCacheKey;
-        console.log("Cache_key atualizada:", novaCacheKey);
-      }
-    });
-  });
-})();
 
 /* =============================
  * HELPERS GERAIS
@@ -404,6 +259,41 @@ function getInicioDuplicarRange() {
     });
   }
 
+  function syncCamposDuplicar() {
+    const inicioDuplicar = document.getElementById("data_inicio_duplicar");
+    const fimDuplicar = document.getElementById("data_fim_duplicar");
+
+    const dataInicioReadonly = document.getElementById("data_inicio");
+    const dataFimReadonly = document.getElementById("data_fim");
+    const periodoInput = document.getElementById("periodo_input");
+
+    if (inicioDuplicar && dataInicioReadonly) {
+      inicioDuplicar.addEventListener("change", function () {
+        const valor = this.value;
+
+        dataInicioReadonly.value = valor;
+        dataFimReadonly.value = "";
+
+        if (valor && periodoInput) {
+          const dataObj = new Date(valor + " 12:00:00");
+
+          if (!isNaN(dataObj)) {
+            const ano = dataObj.getFullYear();
+            const mes = String(dataObj.getMonth() + 1).padStart(2, "0");
+
+            periodoInput.value = `${ano}-${mes}-01`;
+          }
+        }
+      });
+    }
+
+    if (fimDuplicar && dataFimReadonly) {
+      fimDuplicar.addEventListener("change", function () {
+        dataFimReadonly.value = this.value;
+      });
+    }
+  }
+
 
   function syncDuplicarPeriodo(dataInicioStr) {
     const periodoInput = document.getElementById("periodo_duplicar");
@@ -423,29 +313,30 @@ function getInicioDuplicarRange() {
   }
 
   window.addEventListener("DOMContentLoaded", function () {
-    initDataFim();
-    initDataInicio();
-    dmmPicker = createDmmPicker("#dmm");
-    dmmPickerDuplicar = createDmmPicker("#dmm_duplicar");
+    // initDataFim();
+    // initDataInicio();
+    // dmmPicker = createDmmPicker("#dmm");
+    // dmmPickerDuplicar = createDmmPicker("#dmm_duplicar");
 
-    // listeners de limite DMM
-    ["#data_inicio", "#data_fim"].forEach((sel) => {
-      const el = document.querySelector(sel);
-      if (el) el.addEventListener("change", updateDmmLimits);
-    });
-    document.querySelectorAll("input[name='possuiDmm']").forEach((r) =>
-      r.addEventListener("change", updateDmmLimits)
-    );
+    // // listeners de limite DMM
+    // ["#data_inicio", "#data_fim"].forEach((sel) => {
+    //   const el = document.querySelector(sel);
+    //   if (el) el.addEventListener("change", updateDmmLimits);
+    // });
+    // document.querySelectorAll("input[name='possuiDmm']").forEach((r) =>
+    //   r.addEventListener("change", updateDmmLimits)
+    // );
 
-    ["#data_inicio_duplicar", "#data_fim_duplicar"].forEach((sel) => {
-      const el = document.querySelector(sel);
-      if (el) el.addEventListener("change", updateDmmDuplicarLimits);
-    });
-    document.querySelectorAll("input[name='possuiDmmDuplicar']").forEach((r) =>
-      r.addEventListener("change", updateDmmDuplicarLimits)
-    );
+    // ["#data_inicio_duplicar", "#data_fim_duplicar"].forEach((sel) => {
+    //   const el = document.querySelector(sel);
+    //   if (el) el.addEventListener("change", updateDmmDuplicarLimits);
+    // });
+    // document.querySelectorAll("input[name='possuiDmmDuplicar']").forEach((r) =>
+    //   r.addEventListener("change", updateDmmDuplicarLimits)
+    // );
 
     initDuplicarDataPickers();
+    syncCamposDuplicar();
   });
 
   window.syncDuplicarPeriodo = syncDuplicarPeriodo;
@@ -487,7 +378,7 @@ function getInicioDuplicarRange() {
 
     if (selector === "#atributo_select") {
       choicesAtributo = instance;
-      console.log("atribuiu")
+      console.log("Instancia Choices para atributo_select criada no initChoices");
     }
     }
   }
@@ -558,7 +449,9 @@ function getInicioDuplicarRange() {
           daQualidade: opt.dataset.daQualidade,
           daPlanejamento: opt.dataset.daPlanejamento,
           daExop: opt.dataset.daExop,
-          periodo: opt.dataset.periodo
+          periodo: opt.dataset.periodo,
+          tipo: opt.dataset.tipo,
+          ativo: opt.dataset.ativo
         }));
       }
 
@@ -785,44 +678,36 @@ document.body.addEventListener("htmx:responseError", function (evt) {
   });
 
   document.body.addEventListener("htmx:afterSwap", function (evt) {
+    if (evt.detail.target.id === "tabela-pesquisa") {
+
+      const url = evt.detail.pathInfo.requestPath;
+
+      console.log("URL após swap:", url);
+
+      let modo = "";
+
+      if (url.includes("all_atributes_operacao")) {
+        modo = "all_atributes_operacao";
+      } else if (url.includes("pesquisar_mes")) {
+        modo = "pesquisar_mes";
+      }
+
+      let inputModo = document.getElementById("modo_pesquisa_atual");
+
+      if (!inputModo) {
+        return;
+      }
+
+      if (modo !== "" && modo !== undefined) {
+        inputModo.value = modo;
+        console.log("Modo definido: " + modo);
+      }
+    }
     if (evt.detail?.target?.id === "atributos-container") {
       if (window.initChoices) window.initChoices("#atributo_select");
       if (window.syncAtributoHidden) window.syncAtributoHidden();
       bindAtributoToGerente();
     }
-  });
-})();
-
-
-/* =============================
- * Pós-HTMX: definir duplicar_atributo e duplicar_tipo_pesquisa (padrão)
- * ============================= */
-(function () {
-  document.body.addEventListener("htmx:afterRequest", function (evt) {
-    const url = evt.detail?.elt?.getAttribute("hx-post") || evt.detail?.xhr?.responseURL;
-    const xhr = evt.detail?.xhr;
-    if (!xhr || !(xhr.status >= 200 && xhr.status < 300)) return;
-
-    const atributoInput = document.getElementById("duplicar_atributo");
-    const tipoPesquisaInput = document.getElementById("duplicar_tipo_pesquisa");
-    if (!url || !tipoPesquisaInput) return;
-
-    const getAtributo = () => document.getElementById("atributo_select")?.value;
-
-    if (url.includes("/pesquisarm0")) {
-      tipoPesquisaInput.value = "m0";
-      if (atributoInput) atributoInput.value = getAtributo();
-    } else if (url.includes("/pesquisarm1")) {
-      tipoPesquisaInput.value = "m1";
-      if (atributoInput) atributoInput.value = getAtributo();
-    } else if (url.includes("/pesquisarmmais1")) {
-      tipoPesquisaInput.value = "m+1";
-      if (atributoInput) atributoInput.value = getAtributo();
-    } else if (url.includes("/allatributesoperacao") || url.includes("/allatributesapoio")) {
-      if (atributoInput) atributoInput.value = getAtributo();
-    } else if (url.includes("/pesquisar/matrizes_administrativas")) {
-      if (atributoInput) atributoInput.value = getAtributo();
-    } 
   });
 })();
 
@@ -853,15 +738,25 @@ document.body.addEventListener("htmx:responseError", function (evt) {
 (function () {
   document.addEventListener("DOMContentLoaded", function () {
     const btn = document.getElementById("export-btn");
+    const urlAtual = window.location.pathname;
+    let page = null;
+    if (urlAtual.includes("cadastro")) {
+      page = "cadastro";
+    } else {
+      page = "demais";
+    }
     if (!btn) return;
     btn.addEventListener("click", function () {
       const atributo = document.getElementById("atributo_select")?.value || "";
       const tipo = document.getElementById("duplicar_tipo_pesquisa")?.value || "";
       const cache_key = document.getElementById("cache_key_pesquisa")?.value || "";
+      const modo = document.getElementById("modo_pesquisa_atual")?.value;
       const params = new URLSearchParams();
+      params.append("tipo_pesquisa", tipo);
       params.append("atributo", atributo);
-      params.append("duplicar_tipo_pesquisa", tipo);
-      params.append("cache_key", cache_key);
+      params.append("page", page);
+      console.log("Modo no params da exportação: " + modo);
+      params.append("modo", modo);
       const url = "/export_table?" + params.toString();
       window.open(url, "_blank");
     });
@@ -881,26 +776,6 @@ document.body.addEventListener("htmx:responseError", function (evt) {
       const hidden = document.getElementById("duplicar_tipo_pesquisa");
       if (hidden) hidden.value = tipoPesquisa;
     }
-    if (id === "m0_administrativas" || id === "m+1_administrativas") {
-      const tipoPesquisa = event.detail.parameters?.["tipo"];
-      const hidden = document.getElementById("duplicar_tipo_pesquisa");
-      if (hidden) hidden.value = tipoPesquisa;
-    }
-  });
-})();
-
-
-/* =============================
- * DROPDOWN: Links Importantes
- * ============================= */
-(function () {
-  document.addEventListener("DOMContentLoaded", function () {
-    const btn = document.querySelector(".dropdown-button");
-    const content = document.querySelector(".dropdown-content");
-    if (!btn || !content) return;
-    btn.addEventListener("click", function () {
-      content.classList.toggle("show");
-    });
   });
 })();
 
@@ -984,7 +859,7 @@ document.body.addEventListener("htmx:responseError", function (evt) {
 
         if (valores.mes) {
           campoTipo.value = valores.mes;
-          console.log("Tipo de pesquisa setado:", valores.mes);
+          console.log("Tipo de pesquisa setado: ", valores.mes);
         }
 
       } catch (error) {
@@ -994,7 +869,7 @@ document.body.addEventListener("htmx:responseError", function (evt) {
 
     // --- sincroniza atributo atual ---
     campoAtributoDuplicar.value = selectAtributo.value;
-    console.log("Atributo sincronizado:", selectAtributo.value);
+    console.log("Atributo sincronizado: ", selectAtributo.value);
   }
 
   // Delegação global segura
@@ -1096,50 +971,67 @@ function aplicarFiltroAtributo(regraFiltro) {
   );
 }
 
-document.getElementById("btn_atributos_da_apoio")
-  .addEventListener("click", function () {
+(function () {
+  const url = window.location.pathname.toLowerCase();
+  if (!url.includes("/matriz/adm/acordo")) {
+    return;
+  }
 
-    aplicarFiltroAtributo(item =>
-      item.daQualidade === "1" &&
-      item.daPlanejamento === "1"
-    );
+  document.getElementById("btn_atributos_da_apoio")
+    .addEventListener("click", function () {
 
-});
+      aplicarFiltroAtributo(item =>
+        item.daQualidade === "1" &&
+        item.daPlanejamento === "1" &&
+        item.ativo === "0"
+      );
 
-document.getElementById("btn_atributos_na_apoio")
-  .addEventListener("click", function () {
+  });
 
-    aplicarFiltroAtributo(item =>
-      item.daQualidade === "2" &&
-      item.daPlanejamento === "2"
-    );
+  document.getElementById("btn_atributos_na_apoio")
+    .addEventListener("click", function () {
 
-});
+      aplicarFiltroAtributo(item =>
+        (item.daQualidade === "2" ||
+        item.daPlanejamento === "2") &&
+        item.ativo === "0"
+      );
 
-document.getElementById("btn_atributos_na_exop")
-  .addEventListener("click", function () {
+  });
 
-    aplicarFiltroAtributo(item =>
-      item.daExop === "2"
-    );
+  document.getElementById("btn_atributos_na_exop")
+    .addEventListener("click", function () {
 
-});
+      aplicarFiltroAtributo(item =>
+        item.daExop === "2" && item.ativo === "0"
+      );
 
-document.getElementById("btn_atributos_adm")
-  .addEventListener("click", function () {
+  });
 
-    aplicarFiltroAtributo(item =>
-      item.tipo === "Administrativa"
-    );
+  document.getElementById("btn_atributos_adm")
+    .addEventListener("click", function () {
 
-});
+      aplicarFiltroAtributo(item => {
+        if (!item.tipo) return false;
 
-document.getElementById("btn_reset_atributos")
-  .addEventListener("click", function () {
+        const tipoNormalizado = item.tipo
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "") // remove acentos
+          .trim()
+          .toUpperCase();
+        
+
+        return tipoNormalizado === "ADMINISTRACAO" && item.periodo !== "" && item.ativo === "0";
+      });
+
+  });
+
+  document.getElementById("btn_reset_atributos")
+    .addEventListener("click", function () {
 
 
-    aplicarFiltroAtributo(() => true);
+      aplicarFiltroAtributo(() => true);
 
 
-});
-
+  });
+})();
