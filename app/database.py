@@ -3,6 +3,7 @@ from queue import Queue, Empty
 from contextlib import contextmanager
 
 MAX_POOL_SIZE = 100 
+CONNECTIONS = 1
 CONNECTION_STRING = "Driver={SQL Server};Server=primno4;Database=Robbyson;Trusted_Connection=yes;"
 #CONNECTION_STRING = "Driver={ODBC Driver 18 for SQL Server};Server=primno4;Database=Robbyson;Trusted_Connection=yes;"
 _connection_pool = Queue(maxsize=MAX_POOL_SIZE)
@@ -13,7 +14,7 @@ def _create_connection():
 def _populate_pool():
     """Pré-enche o pool com algumas conexões iniciais."""
     print("Preenchendo Pool de Conexões...")
-    for _ in range(5):
+    for _ in range(CONNECTIONS):
         try:
             conn = _create_connection()
             _connection_pool.put(conn)

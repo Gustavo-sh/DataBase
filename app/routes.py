@@ -1,3 +1,4 @@
+import copy
 from fastapi import APIRouter, Request, Form, Query, HTTPException, Response, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -15,23 +16,25 @@ import json
 from fastapi import UploadFile, File
 from html import escape
 from app.cache import (
-    get_from_cache, set_cache, load_registros, save_registros, set_session, get_current_user
+    get_from_cache, set_cache, load_registros, save_registros, get_current_user, redis_client
 )
 from app.connections_db import (
     get_indicadores, get_funcao, get_atributos_matricula, get_user_bd, save_user_bd, save_registros_bd, get_operacoes, get_gerentes,
-    get_atributos_adm, update_da_adm_apoio, batch_validar_submit_query, get_num_atendentes, import_from_excel, get_atributos_da_apoio, get_atributos_na_exop,
-    get_acordos_apoio, get_atributos_apoio, get_atributos_gerente, update_meta_moedas_bd, get_nao_acordos_exop, get_atributos_na_apoio, get_atributos_adm_by_month,
-    get_all_atributos_cadastro_apoio, get_matrizes_administrativas_pg_adm, get_matrizes_nao_cadastradas, get_matrizes_alteradas_apoio, update_dmm_bd, query_mes, 
-    get_factibilidade, insert_log_auditoria, get_nao_acordos_apoio,check_atribute_and_periodo_bd,get_pendencias_apoio,
+    get_atributos_adm, update_da_adm_apoio, get_num_atendentes, import_from_excel,
+    get_atributos_apoio, get_atributos_gerente, update_meta_moedas_bd, get_names, get_all_alterations,
+    get_all_atributos_cadastro_apoio, get_matrizes_nao_cadastradas, get_matrizes_alteradas_apoio, update_dmm_bd, query_mes, 
+    get_factibilidade, insert_log_auditoria,check_atribute_and_periodo_bd,get_pendencias_apoio,
 )
-from app.validations import validation_submit_table, validation_import_from_excel, validation_meta_moedas, validation_dmm, validation_datas
+from app.validations import validation_submit_table, validation_import_from_excel, validation_meta_moedas, validation_dmm
 from app.utils import _check_registro_scope, _check_role_or_forbid, preprocess_registros, require_htmx, validate_origin, clean_value, to_int_safe, generate_cache_key
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-adms = ["277561", "117699", "154658", "160031", "086939"]
-SESSION_COOKIE = "logged_in"
+adms = ["277561", "117699", "154658", "160031", "086939", "429569"]
+
+CACHE_TTL = timedelta(minutes=5)
+SESSION_TIMEOUT = 900
 EXPECTED_COLUMNS = [
     'atributo', 'id_nome_indicador', 'meta_sugerida', 'resultado', 'atingimento', 'meta', 'moedas', 'tipo_indicador', 
         'acumulado', 'esquema_acumulado', 'tipo_matriz', 'data_inicio', 
@@ -40,7 +43,6 @@ EXPECTED_COLUMNS = [
         'data_submetido_por', 'qualidade', 'da_qualidade', 'data_da_qualidade', 
         'planejamento', 'da_planejamento', 'data_da_planejamento', 'exop', 'da_exop', 'data_da_exop'
 ]
-
 EXPECTED_COLUMNS_IMPORT = [
     'atributo', 'id_nome_indicador', 'meta', 'moedas', 'tipo_indicador', 
         'acumulado', 'esquema_acumulado', 'tipo_matriz', 'data_inicio', 
@@ -72,18 +74,41 @@ async def login(
     password: str = Form(...)
 ):
     user = await get_user_bd(username)
+
     if not user:
         return RedirectResponse("/login?erro=Usuário não cadastrado!", status_code=303)
+
     if not pwd_context.verify(password, user["password"]):
         return RedirectResponse("/login?erro=Senha incorreta!", status_code=303)
+
     session_token = str(uuid.uuid4())
-    await set_session(session_token, {"usuario": username, "role": user.get("role")})
+
+    await redis_client.set(
+        f"session:{session_token}",
+        json.dumps({
+            "usuario": username,
+            "role": user.get("role")
+        }),
+        ex=SESSION_TIMEOUT
+    )
+
     resp = RedirectResponse("/redirect_by_role", status_code=303)
-    resp.set_cookie("session_token", session_token, httponly=True)
-    resp.set_cookie("logged_in", "true", httponly=True)
-    resp.set_cookie("last_active", datetime.utcnow().isoformat(), httponly=True)
-    resp.set_cookie("username", username, httponly=True)
-    resp.set_cookie("role", user.get("role"), httponly=True)
+
+    resp.set_cookie(
+        "session_token",
+        session_token,
+        httponly=True,
+        #secure=True,
+        samesite="Lax",
+    )
+    resp.set_cookie(
+        "username",
+        username,
+        httponly=True,
+        #secure=True,
+        samesite="Lax",
+    )
+
     return resp
 
 @router.get("/redirect_by_role")
@@ -103,13 +128,17 @@ async def redirect_by_role(request: Request):
 
 @router.post("/logout")
 async def logout(request: Request):
-    resp = RedirectResponse("/login", status_code=303)
-    resp.delete_cookie(SESSION_COOKIE)
-    resp.delete_cookie("last_active")
-    resp.delete_cookie("username")
-    resp.delete_cookie("session_token")
+
+    session_token = request.cookies.get("session_token")
+
+    if session_token:
+        await redis_client.delete(f"session:{session_token}")
+
+    response = RedirectResponse("/login", status_code=303)
+    response.delete_cookie("session_token")
     await save_registros(request, [])
-    return resp
+
+    return response
 
 @router.get("/register")
 def register_page(request: Request, erro: Optional[str] = Query(None)):
@@ -147,9 +176,9 @@ async def register_user(request: Request, username: str = Form(...), password: s
 
 @router.get("/matriz/operacao")
 async def matriz_page(request: Request):
-    logged_in = request.cookies.get(SESSION_COOKIE)
-    if not logged_in or logged_in != "true":
-        return RedirectResponse("/login", status_code=303)
+    # logged_in = request.cookies.get(SESSION_COOKIE)
+    # if not logged_in or logged_in != "true":
+    #     return RedirectResponse("/login", status_code=303)
     user = await get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -158,8 +187,9 @@ async def matriz_page(request: Request):
     indicadores = await get_indicadores()
     lista_atributos = await get_atributos_matricula(username)
     atributos = sorted(lista_atributos, key=lambda item: item.get('atributo') or '')
-    matrizes_alteradas = await get_matrizes_alteradas_apoio(username)
-    registros = await load_registros(request)
+    names = await get_names()
+    name = names.get(username)
+    matrizes_alteradas = await get_matrizes_alteradas_apoio(name)
     area = None
     funcao = await get_funcao(username)
     if "qualidade" in funcao.lower():
@@ -168,7 +198,6 @@ async def matriz_page(request: Request):
         area = "Planejamento"
     return templates.TemplateResponse("indexOperacao.html", {
         "request": request,
-        "registros": registros,
         "indicadores": indicadores,
         "username": username,
         "atributos": atributos,
@@ -179,17 +208,15 @@ async def matriz_page(request: Request):
 
 @router.get("/matriz/apoio")
 async def index_apoio(request: Request):
-    logged_in = request.cookies.get(SESSION_COOKIE)
-    if not logged_in or logged_in != "true":
-        return RedirectResponse("/login", status_code=303)
+    # logged_in = request.cookies.get(SESSION_COOKIE)
+    # if not logged_in or logged_in != "true":
+    #     return RedirectResponse("/login", status_code=303)
     user = await get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
     _check_role_or_forbid(user, ["apoio qualidade", "apoio planejamento"])
     username = request.cookies.get("username")
     indicadores = await get_indicadores()
-    
-    registros = await load_registros(request)
     area = None
     funcao = await get_funcao(username)
     if "qualidade" in funcao.lower():
@@ -199,7 +226,6 @@ async def index_apoio(request: Request):
     atributos = await get_atributos_apoio(area)
     return templates.TemplateResponse("indexApoio.html", {
         "request": request,
-        "registros": registros,
         "indicadores": indicadores,
         "username": username,
         "atributos": atributos,
@@ -208,10 +234,10 @@ async def index_apoio(request: Request):
     })
 
 @router.get("/matriz/apoio/cadastro")
-async def index_apoio(request: Request):
-    logged_in = request.cookies.get(SESSION_COOKIE)
-    if not logged_in or logged_in != "true":
-        return RedirectResponse("/login", status_code=303)
+async def index_apoio_cadastro(request: Request):
+    # logged_in = request.cookies.get(SESSION_COOKIE)
+    # if not logged_in or logged_in != "true":
+    #     return RedirectResponse("/login", status_code=303)
     user = await get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -221,21 +247,13 @@ async def index_apoio(request: Request):
     area = None
     funcao = await get_funcao(username)
     if "qualidade" in funcao.lower():
-        area = "QUALID"
+        area = "qualidade"
     elif "planejamento" in funcao.lower():
-        area = "PLAN"
+        area = "planejamento"
     atributos = await get_all_atributos_cadastro_apoio(area)
-    registros = await load_registros(request)
     funcao = await get_funcao(username)
-    if area == "QUALID":
-        area = "Qualidade"
-    elif area == "PLAN":
-        area = "Planejamento"
-    else:
-        area = None
     return templates.TemplateResponse("indexApoioCadastro.html", {
         "request": request,
-        "registros": registros,
         "indicadores": indicadores,
         "username": username,
         "atributos": atributos,
@@ -245,17 +263,17 @@ async def index_apoio(request: Request):
 
 @router.get("/matriz/adm")
 async def index_adm(request: Request):
-    logged_in = request.cookies.get(SESSION_COOKIE)
-    if not logged_in or logged_in != "true":
-        return RedirectResponse("/login", status_code=303)
+    # logged_in = request.cookies.get(SESSION_COOKIE)
+    # if not logged_in or logged_in != "true":
+    #     return RedirectResponse("/login", status_code=303)
     user = await get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
     _check_role_or_forbid(user, ["adm"])
     username = request.cookies.get("username")
+    
     indicadores = await get_indicadores()
     atributos = await get_atributos_adm()
-    registros = await load_registros(request)
     area = None
     funcao = await get_funcao(username)
     if "qualidade" in funcao.lower():
@@ -264,7 +282,6 @@ async def index_adm(request: Request):
         area = "Planejamento"
     return templates.TemplateResponse("indexAdm.html", {
         "request": request,
-        "registros": registros,
         "indicadores": indicadores,
         "username": username,
         "atributos": atributos,
@@ -273,39 +290,26 @@ async def index_adm(request: Request):
     })
 
 @router.get("/matriz/adm/acordo")
-async def index_adm(request: Request):
-    logged_in = request.cookies.get(SESSION_COOKIE)
-    if not logged_in or logged_in != "true":
-        return RedirectResponse("/login", status_code=303)
+async def index_adm_acordo(request: Request):
+    # logged_in = request.cookies.get(SESSION_COOKIE)
+    # if not logged_in or logged_in != "true":
+    #     return RedirectResponse("/login", status_code=303)
     user = await get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
     _check_role_or_forbid(user, ["adm"])
     username = request.cookies.get("username")
+    print(username)
     indicadores = await get_indicadores()
-    #atributos = await get_atributos_adm()
-    #atributos_da = await get_atributos_da_apoio()
-    #atributos_na_exop = await get_atributos_na_exop()
-    #atributos_na_apoio = await get_atributos_na_apoio()
-    #atributos_adm_m0 = await get_atributos_adm_by_month("atual")
-    #atributos_adm_m1 = await get_atributos_adm_by_month("seguinte")
-    registros = await load_registros(request)
     gerentes = await get_gerentes()
     operacoes = await get_operacoes()
     return templates.TemplateResponse("indexAdmAcordo.html", {
         "request": request,
-        "registros": registros,
         "indicadores": indicadores,
         "username": username,
-        #"atributos": atributos,
-        #"atributos_da": atributos_da,
         "role_": user.get("role"),
         "gerentes": gerentes,
         "operacoes": operacoes,
-        # "atributos_na_exop": atributos_na_exop,
-        # "atributos_na_apoio": atributos_na_apoio,
-        # "atributos_adm_m0": atributos_adm_m0,
-        # "atributos_adm_m1": atributos_adm_m1
     })
 
 @router.get("/partials/atributos-smart-adm", response_class=HTMLResponse)
@@ -335,45 +339,6 @@ async def partial_atributos_smart_apoio(request: Request):
         {"request": request, "atributos": atributos_smart}
     )
 
-@router.get("/partials/atributos-da-apoio", response_class=HTMLResponse)
-async def partial_atributos_da_apoio(request: Request):
-    atributos_da = await get_atributos_da_apoio()
-    return templates.TemplateResponse(
-        "_atributos_da_apoio.html",
-        {"request": request, "atributos_da": atributos_da}
-    )
-
-@router.get("/partials/atributos-na-exop", response_class=HTMLResponse)
-async def partial_atributos_na_exop(request: Request):
-    atributos_na = await get_atributos_na_exop()
-    return templates.TemplateResponse(
-        "_atributos_na_exop.html",
-        {"request": request, "atributos_na_exop": atributos_na}
-    )
-
-@router.get("/partials/atributos-na-apoio", response_class=HTMLResponse)
-async def partial_atributos_na_apoio(request: Request):
-    atributos_na = await get_atributos_na_apoio()
-    return templates.TemplateResponse(
-        "_atributos_na_apoio.html",
-        {"request": request, "atributos_na_apoio": atributos_na}
-    )
-
-@router.get("/partials/atributos-m0-adm", response_class=HTMLResponse)
-async def partial_atributos_m0_adm(request: Request):
-    atributos_adm = await get_atributos_adm_by_month("atual")
-    return templates.TemplateResponse(
-        "_atributos_m0_adm.html",
-        {"request": request, "atributos_adm_m0": atributos_adm}
-    )
-
-@router.get("/partials/atributos-m1-adm", response_class=HTMLResponse)
-async def partial_atributos_m1_adm(request: Request):
-    atributos_adm = await get_atributos_adm_by_month("seguinte")
-    return templates.TemplateResponse(
-        "_atributos_m1_adm.html",
-        {"request": request, "atributos_adm_m1": atributos_adm}
-    )
 
 @router.post("/add", response_class=HTMLResponse)
 async def add_registro(
@@ -382,7 +347,6 @@ async def add_registro(
     meta: str = Form(...),
     moeda: str = Form(...),
     criterio_final: Optional[str] = Form(None),
-    #area: str = Form(...),
     tipo_faturamento: str = Form(...),
     escala: str = Form(...),
     acumulado: str = Form(...),
@@ -397,7 +361,6 @@ async def add_registro(
     data_fim: str = Form(...),
     periodo: str = Form(...),
     gerente: str = Form(...),
-    #responsavel: str = Form(...)
     ):
     registros = await load_registros(request)
     novo_id = str(uuid.uuid4())
@@ -415,6 +378,14 @@ async def add_registro(
             status_code=422,
             detail="Preencha todos os campos obrigatórios!"
     )
+    if len(registros) > 0:
+        periodo_registros = registros[0].get("periodo")
+        if periodo != periodo_registros:
+            raise HTTPException(
+                status_code=422,
+                detail="Você tentou enviar um indicador com periodo diferente do que já está na tabela! Vá para a pana pagina inicial e relecione o mesmo periodo da tabela ."
+            )
+
     registros.append(novo)
     await save_registros(request, registros)
     html_content = templates.TemplateResponse(
@@ -428,13 +399,11 @@ async def add_registro(
 @router.get("/pesquisar_mes", response_class=HTMLResponse)
 async def pesquisar_mes(request: Request,
     atributo: str | None = Query(...),
-    mes: str = Query(...),
-    atributo_cascata: str | None = Query(None)):
+    mes: str = Query(...)):
     try:
         registros = []
 
-        atributo_submit = atributo if atributo != "" else atributo_cascata
-        if (atributo_submit == "" or not atributo_submit):
+        if (atributo == "" or not atributo):
             raise HTTPException(
                 status_code=422,
                 detail="Selecione um atributo primeiro!"
@@ -461,15 +430,12 @@ async def pesquisar_mes(request: Request,
             page = "demais"
             show_das = True
 
-        # if "/matriz/apoio" in path:
-        #   show_checkbox = False
-
         show_checkbox = True
         if mes == "m+1":
             if ("/matriz/apoio" not in path) and ("/matriz/adm" not in path):
                 show_checkbox = False
 
-        registros = await query_mes(atributo_submit, username, page, area, mes)
+        registros = await query_mes(atributo, username, page, area, mes)
 
         registros = [
             dic for dic in registros
@@ -481,138 +447,44 @@ async def pesquisar_mes(request: Request,
             if isinstance(dic.get("id_nome_indicador"), str) and \
                dic.get("id_nome_indicador").lower() == "901 - % disponibilidade":
                 dic["meta_sugerida"] = 94.0
-
+        response = None
         if "operacao" in funcao.lower():
-            html_content = templates.TemplateResponse("_pesquisaOperacao.html", {
+            response = templates.TemplateResponse("_pesquisaOperacao.html", {
                 "request": request,
                 "registros": registros,
                 "show_checkbox": show_checkbox,
                 "show_das": show_das
             })
         else:
-            html_content = templates.TemplateResponse("_pesquisa.html", {
+            response = templates.TemplateResponse("_pesquisa.html", {
                 "request": request,
                 "registros": registros,
                 "show_checkbox": show_checkbox,
                 "show_das": show_das
             })
-
-        response = Response(content=html_content.body, media_type="text/html")
 
         if registros:
-            response.headers["HX-Trigger"] = '{"mostrarSucesso": "Pesquisa realizada com sucesso!"}'
+            response.headers["HX-Trigger"] = json.dumps(
+                {"mostrarSucesso": "Pesquisa realizada com sucesso!"},
+                ensure_ascii=False
+            )
         else:
-            response.headers["HX-Trigger"] = '{"mostrarSucesso": "Sua pesquisa não trouxe resultados!"}'
+            response.headers["HX-Trigger"] = json.dumps(
+                {"mostrarSucesso": "sem_resultados"},
+                ensure_ascii=False
+            )
 
         return response
 
     except Exception as e:
         return Response(
-            content=f"Erro inesperado: {str(e)}",
+            content=f"{str(e)}",
             status_code=422
         )
-
-@router.get("/pesquisar_acordos_apoio", response_class=HTMLResponse)
-async def pesquisar_acordos(request: Request, atributos_acordo: str | None = Query(None)):
-    if not atributos_acordo:
-        raise HTTPException(status_code=422, detail="Informe um atributo para efetuar a pesquisa.")
-    registros = []
-    current_page = request.headers.get("hx-current-url", "desconhecido")
-    registros = await get_acordos_apoio(atributos_acordo)
-    r_to_show = [r for r in registros if r.get("id_nome_indicador").lower() != "48 - presença"]
-    path = urlparse(current_page).path.lower()
-    show_das = None
-    if "cadastro" in path:
-        show_das = None
-    else:
-        show_das = True
-    html_content = templates.TemplateResponse(
-    "_pesquisa.html", 
-    {"request": request, "registros": r_to_show, "show_checkbox": True, "show_das": show_das}
-    )
-    response = Response(content=html_content.body, media_type="text/html")
-    if len(registros) > 0:
-        response.headers["HX-Trigger"] = '{"mostrarSucesso": "Pesquisa realizada com sucesso!"}'
-    else:
-        response.headers["HX-Trigger"] = '{"mostrarSucesso": "Sua pesquisa não trouxe resultados!"}'
-    return response
-
-@router.get("/pesquisar_nao_acordos", response_class=HTMLResponse)
-async def pesquisar_nao_acordos(request: Request, atributo: List[str] = Query(..., alias="atributos_nao_acordos_apoio")):
-    list_atributo = [a for a in atributo if a]
-    atributo = list_atributo[0] if len(list_atributo) > 0 else None
-    if not atributo:
-        raise HTTPException(status_code=422, detail="Informe um atributo para efetuar a pesquisa.")
-    registros = []
-    registros = await get_nao_acordos_apoio(atributo)
-    r_to_show = [r for r in registros if r.get("id_nome_indicador").lower() != "48 - presença"]
-    html_content = templates.TemplateResponse(
-    "_pesquisa.html", 
-    {"request": request, "registros": r_to_show, "show_checkbox": True, "show_das": True}
-    )
-    response = Response(content=html_content.body, media_type="text/html")
-    if len(registros) > 0:
-        response.headers["HX-Trigger"] = '{"mostrarSucesso": "Pesquisa realizada com sucesso!"}'
-    else:
-        response.headers["HX-Trigger"] = '{"mostrarSucesso": "Sua pesquisa não trouxe resultados!"}'
-    return response
 
 @router.get("/sentry-debug")
 async def trigger_error():
     division_by_zero = 1 / 0
-
-@router.get("/pesquisar_nao_acordos_exop", response_class=HTMLResponse)
-async def pesquisar_nao_acordos_exop(request: Request, atributos_nao_acordos_exop: str = Query(...)):
-    if not atributos_nao_acordos_exop:
-        raise HTTPException(status_code=422, detail="Informe um atributo na caixa acima para efetuar a pesquisa.")
-    registros = []
-    print(atributos_nao_acordos_exop)
-    current_page = request.headers.get("hx-current-url", "desconhecido")
-    registros = await get_nao_acordos_exop(atributos_nao_acordos_exop)
-    r_to_show = [r for r in registros if r.get("id_nome_indicador").lower() != "48 - presença"]
-    path = urlparse(current_page).path.lower()
-    show_das = None
-    if "cadastro" in path:
-        show_das = None
-    else:
-        show_das = True
-    html_content = templates.TemplateResponse(
-    "_pesquisa.html", 
-    {"request": request, "registros": r_to_show, "show_checkbox": True, "show_das": show_das}
-    )
-    response = Response(content=html_content.body, media_type="text/html")
-    if len(registros) > 0:
-        response.headers["HX-Trigger"] = '{"mostrarSucesso": "Pesquisa realizada com sucesso!"}'
-    else:
-        response.headers["HX-Trigger"] = '{"mostrarSucesso": "Sua pesquisa não trouxe resultados!"}'
-    return response
-
-@router.get("/pesquisar_matrizes_administrativas", response_class=HTMLResponse)
-async def matrizes_administrativas_pg_adm(request: Request, tipo: str = Query(None), atributos_adm_m0: str = Query(None), atributos_adm_m1: str = Query(None)):
-    if atributos_adm_m0 and atributos_adm_m1:
-        raise HTTPException(status_code=422, detail="Selecione apenas um dos atributos (m0 ou m1) para efetuar a pesquisa.")
-    atributo = atributos_adm_m0 if atributos_adm_m0 else atributos_adm_m1
-    if not atributo:
-        raise HTTPException(status_code=422, detail="Informe um atributo para efetuar a pesquisa.")
-    current_page = request.headers.get("hx-current-url", "desconhecido")    
-    registros = await get_matrizes_administrativas_pg_adm(tipo, atributo)
-    path = urlparse(current_page).path.lower()
-    show_das = None
-    if "cadastro" in path:
-        show_das = None
-    else:
-        show_das = True
-    html_content = templates.TemplateResponse(
-    "_pesquisa.html", 
-    {"request": request, "registros": registros, "show_checkbox": True, "show_das": show_das, "show_just": True}
-    )
-    response = Response(content=html_content.body, media_type="text/html")
-    if len(registros) > 0:
-        response.headers["HX-Trigger"] = '{"mostrarSucesso": "Pesquisa realizada com sucesso!"}'
-    else:
-        response.headers["HX-Trigger"] = '{"mostrarSucesso": "Sua pesquisa não trouxe resultados!"}'
-    return response
-
 
 @router.get("/all_atributes_operacao", response_class=HTMLResponse)
 async def all_atributes_operacao(request: Request, tipo_pesquisa: str = Query(...)):
@@ -642,22 +514,23 @@ async def all_atributes_operacao(request: Request, tipo_pesquisa: str = Query(..
     )
     response = Response(content=html_content.body, media_type="text/html")
     if len(registros) > 0:
-        response.headers["HX-Trigger"] = '{"mostrarSucesso": "Pesquisa realizada com sucesso!"}'
+        response.headers["HX-Trigger"] = json.dumps(
+            {"mostrarSucesso": "Pesquisa realizada com sucesso!"},
+            ensure_ascii=False
+        )
     else:
-        response.headers["HX-Trigger"] = '{"mostrarSucesso": "Sua pesquisa não trouxe resultados!"}'
+        response.headers["HX-Trigger"] = '{"mostrarSucesso": "sem_resultados"}'
     return response
 
 @router.post("/submit_table", response_class=HTMLResponse)
 async def submit_table(request: Request):
     require_htmx(request)
     validate_origin(request)
+    form = await request.form()
+    escala = form.get("escala_submit")
     registros = await load_registros(request)
-    username = request.cookies.get("username", "anon")
-    por_atributo, por_indicador = preprocess_registros(registros)
-    periodo = registros[0]["periodo"]
-    check_duplicity = await check_atribute_and_periodo_bd(por_atributo, periodo)
-    if len(check_duplicity) > 0:
-        raise HTTPException(status_code=422, detail="Você está tentando submeter uma matriz que já foi submetida. Se deseja alterar uma matriz, gentileza utilizar o link de alteração de matriz presente em 'links importantes'.")
+    if (not escala or escala == "") and registros[0].get("escala") == "":
+        raise HTTPException(status_code=422, detail="Selecione uma escala!")
     if not registros:
         return Response(
         "",
@@ -666,6 +539,15 @@ async def submit_table(request: Request):
                 "mostrarErro": {"value": "Nenhum registro para submeter."}
             })
         })
+    user = await get_current_user(request)
+    role = user.get("role") if user else "unknown"
+    username = request.cookies.get("username", "anon")
+    por_atributo, por_indicador = preprocess_registros(registros)
+    periodo = registros[0]["periodo"]
+    check_duplicity = await check_atribute_and_periodo_bd(por_atributo, periodo)
+    if len(check_duplicity) > 0:
+        raise HTTPException(status_code=422, detail="Você está tentando submeter uma matriz que já foi submetida. Se deseja alterar uma matriz, gentileza utilizar a opção 'Alterar uma Matriz' no painel superior.")
+    
     num_atendentes = await get_num_atendentes(registros[0]["atributo"]) if "opera" in registros[0]["tipo_matriz"].lower() else None
     if "opera" in registros[0]["tipo_matriz"].lower():
         if num_atendentes == 0 or num_atendentes == '0':
@@ -678,7 +560,7 @@ async def submit_table(request: Request):
             })
     results = None
     try:
-        results = await validation_submit_table(registros, username, por_indicador)
+        results = await validation_submit_table(registros, username, por_indicador, role)
     except Exception as e:
         return Response(
             "",
@@ -695,8 +577,16 @@ async def submit_table(request: Request):
                     "mostrarErro": {"value": results}
                 })
             })      
-                    
-    await save_registros_bd(results, username, None, None)
+    try:                
+        await save_registros_bd(results, username, escala)
+    except Exception:
+        return Response(
+            "",
+            headers={
+                "HX-Trigger": json.dumps({
+                    "mostrarErro": {"value": "Erro inesperado ao salvar matriz no banco de dados."}
+                })
+            }) 
     response = Response(
         content="",
         status_code=status.HTTP_200_OK,
@@ -838,13 +728,13 @@ async def update_registro(request: Request, registro_id: str, campo: str, novo_v
                 valor_processado = 0
             else:
                 valor_processado = int(valor_limpo)
-        elif tipo_indicador in ["Percentual"] and campo != "moeda":
+        elif tipo_indicador in ["PERCENTUAL"] and campo != "moeda":
             float(valor_limpo.replace(',', '.'))
-        elif tipo_indicador in ["Inteiro"] and campo != "moeda":
+        elif tipo_indicador in ["INTEIRO"] and campo != "moeda":
             int(valor_limpo.replace(',', '.'))
-        elif tipo_indicador in ["Decimal"] and campo != "moeda":
+        elif tipo_indicador in ["DECIMAL"] and campo != "moeda":
             float(valor_limpo.replace(',', '.'))
-        elif tipo_indicador in ["Hora"] and campo != "moeda":
+        elif tipo_indicador in ["HORA"] and campo != "moeda":
             partes = valor_limpo.split(":")
             if len(partes) < 3:
                 return Response(status_code=404, content=f"Hora inválida: {novo_valor}.")
@@ -905,6 +795,8 @@ async def processar_acordo(
     _check_role_or_forbid(user, ["adm", "apoio qualidade", "apoio planejamento"])
     role = user.get("role", "default").lower().strip()
     cache_key = generate_cache_key(1, tipo, atributo, page)
+    username = user.get("usuario", "anon")
+    data = datetime.now().strftime("%Y-%m-%d")
     print(cache_key)
     
 
@@ -937,6 +829,11 @@ async def processar_acordo(
                     status_code=422,
                     detail="Não é possível dar acordo ou não acordo para registros que já passaram pelo DA da Exop."
                 )
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail="Cache de pesquisa não encontrado ou expirado. Refaça a pesquisa."
+            )
     except ValueError:
         pass
 
@@ -958,12 +855,12 @@ async def processar_acordo(
         )
 
     if updates_a_executar:
-        username = user.get("usuario")
-
         try:
             if role == "adm" and trava_da_exop[0].get("tipo_matriz").lower().strip() == "operacional":
                 for dic in trava_da_exop:
-                    if int(dic.get("da_qualidade", 0)) == 0 and int(dic.get("da_planejamento", 0)) == 0:
+                    qualidade = int(dic.get("da_qualidade", 0))
+                    planejamento = int(dic.get("da_planejamento", 0))
+                    if (qualidade == 0 and planejamento == 0) or (qualidade == 1 and planejamento == 0) or (qualidade == 0 and planejamento == 1):
                         raise HTTPException(
                             status_code=422,
                             detail="Validação da qualidade ou do planejamento está ausente para o atributo selecionado."
@@ -972,44 +869,7 @@ async def processar_acordo(
             raise HTTPException(
                 status_code=422,
                 detail=f"Não foi possível validar os DA's das areas de apoio. ({e})"
-            )
-                    
-        # if role == "adm":
-        #     for dic in trava_da_exop:
-        #         try:
-        #             area = dic.get("area", "").lower().strip()
-        #             indicador = dic.get("id_nome_indicador", "")
-        #         except Exception:
-        #             raise HTTPException(
-        #                 status_code=422,
-        #                 detail="xPesquisax: Não foi possível validar os dados selecionados."
-        #             )
-
-        #         if area == "qualidade":
-        #             try:
-        #                 if int(dic.get("da_qualidade", 0)) == 0 and "opera" in dic.get("tipo_matriz", "").lower():
-        #                     raise HTTPException(
-        #                         status_code=422,
-        #                         detail=f"xPesquisax: O indicador {indicador} não tem De Acordo da Qualidade."
-        #                     )
-        #             except Exception:
-        #                 raise HTTPException(
-        #                     status_code=422,
-        #                     detail=f"xPesquisax: Não foi possível verificar o De Acordo da Qualidade do indicador {indicador}."
-        #                 )
-
-        #         elif area == "planejamento":
-        #             try:
-        #                 if int(dic.get("da_planejamento", 0)) == 0 and "opera" in dic.get("tipo_matriz", "").lower():
-        #                     raise HTTPException(
-        #                         status_code=422,
-        #                         detail=f"xPesquisax: O indicador {indicador} não tem De Acordo do Planejamento."
-        #                     )
-        #             except Exception:
-        #                 raise HTTPException(
-        #                     status_code=422,
-        #                     detail=f"xPesquisax: Não foi possível verificar o De Acordo do Planejamento do indicador {indicador}."
-        #                 )
+            )            
 
         try:
             await update_da_adm_apoio(updates_a_executar, role, status_acao, username)
@@ -1018,86 +878,36 @@ async def processar_acordo(
                 status_code=422,
                 detail=f"Erro ao atualizar os registros ({e})."
             )
-
-    response = Response(content="", media_type="text/html")
+    registros_copy = copy.deepcopy(registros_pesquisa)
+    for r in registros_copy:
+        if role == "apoio qualidade":
+            r["da_qualidade"] = 1 if status_acao == "acordo" else 2
+            r["qualidade"] = username
+            r["data_da_qualidade"] = data
+        elif role == "apoio planejamento":
+            r["da_planejamento"] = 1 if status_acao == "acordo" else 2
+            r["planejamento"] = username
+            r["data_da_planejamento"] = data
+        elif role == "adm":
+            r["da_exop"] = 1 if status_acao == "acordo" else 2
+            r["exop"] = username
+            r["data_da_exop"] = data
+    registros_apos_acao = [r for r in registros_copy if r.get("id_nome_indicador", "").lower() != "48 - presença"]
+    response = templates.TemplateResponse(
+        "_pesquisa.html", 
+        {
+            "request": request, 
+            "registros": registros_apos_acao,
+            "show_checkbox": True,
+            "show_das": True
+        }
+    )
     response.headers["HX-Trigger"] = json.dumps({
-        "mostrarSucesso": {"value": "DA atualizado com sucesso! Irá refletir no sistema quando o tempo da cache expirar."},
+        "mostrarSucesso": {"value": "DA/NA atualizado com sucesso!"},
         "refreshAtributosSmart": True,
     })
+    await set_cache(cache_key, registros_copy, CACHE_TTL)
     return response
-
-
-
-# @router.post("/processar_acordo", response_class=HTMLResponse)
-# async def processar_acordo(
-#     request: Request, 
-#     registro_ids: List[str] = Form([], alias="registro_ids"),
-#     status_acao: str = Form(..., alias="status_acao"),
-#     cache_key: str = Form(..., alias="cache_key") 
-# ):
-#     user = get_current_user(request)
-#     _check_role_or_forbid(user, ["adm", "apoio qualidade", "apoio planejamento"])
-#     role = user.get("role", "default")
-#     if not registro_ids:
-#         raise HTTPException(
-#             status_code=422,
-#             detail="xPesquisax: Selecione pelo menos um registro para dar Acordo ou Não Acordo."
-#         )
-#     registros_pesquisa = get_from_cache(cache_key)
-#     print(cache_key)
-#     if not registros_pesquisa:
-#          raise HTTPException(status_code=422, detail="xPesquisax: Cache de pesquisa não encontrado ou expirado. Refaça a pesquisa.")
-#     ids_selecionados = set(registro_ids)
-#     registros_apos_acao = []
-#     updates_a_executar = []
-#     trava_da_exop = []
-#     current_page = request.headers.get("hx-current-url", "desconhecido").lower()
-#     path = urlparse(current_page).path.lower()
-#     show_das = None
-#     if "cadastro" in path:
-#         show_das = None
-#     else:
-#         show_das = True
-#     for r in registros_pesquisa:
-#         if str(r.get("id")) not in ids_selecionados:
-#             registros_apos_acao.append(r)
-#         else:
-#             atributo = r.get("atributo")
-#             id_nome_indicador = r.get("id_nome_indicador") 
-#             periodo = r.get("periodo")
-#             updates_a_executar.append((atributo, periodo, id_nome_indicador)) 
-#             trava_da_exop.append(r)
-#     if role == 'adm':
-#         updates_a_executar.append((atributo, periodo, '48 - Presença'))
-#     if updates_a_executar:
-#         role = user.get("role", "default")
-#         username = user.get("usuario")
-#         if role == "adm":
-#             for dic in trava_da_exop:
-#                 if dic["area"] == "Qualidade":
-#                     try:
-#                         if int(dic["da_qualidade"]) == 0:
-#                             raise HTTPException(status_code=422, detail="xPesquisax: O indicar " + dic["id_nome_indicador"] + " não tem de acordo da qualidade.")
-#                     except Exception:
-#                         raise HTTPException(status_code=422, detail="xPesquisax: Não foi possível verificar o de acordo da qualidade do indicador " + dic["id_nome_indicador"])
-#                 elif dic["area"] == "Planejamento":
-#                     try:
-#                         if int(dic["da_planejamento"]) == 0:
-#                             raise HTTPException(status_code=422, detail="xPesquisax: O indicar " + dic["id_nome_indicador"] + " não tem de acordo da planejamento.")
-#                     except Exception:
-#                         raise HTTPException(status_code=422, detail="xPesquisax: Não foi possível verificar o de acordo da planejamento do indicador " + dic["id_nome_indicador"])
-#         await update_da_adm_apoio(updates_a_executar, role, status_acao, username) 
-#     CACHE_TTL = timedelta(minutes=1)
-#     set_cache(cache_key, registros_apos_acao, CACHE_TTL)
-#     return templates.TemplateResponse(
-#         "_pesquisa.html", 
-#         {
-#             "request": request, 
-#             "registros": registros_apos_acao,
-#             "show_checkbox": True,
-#             "show_das": show_das
-#         }
-#     )
 
 @router.post("/update_meta_moedas", response_class=HTMLResponse)
 async def update_meta_moedas(
@@ -1169,27 +979,26 @@ async def update_meta_moedas(
     if updates_a_executar:
         await update_meta_moedas_bd(updates_a_executar, meta, moedas, role, username, registros_pesquisa[0]["ativo"])
         await insert_log_auditoria(registros_selecionados, meta_v, moedas_v, dmm_v, username)
-    for r in registros_pesquisa:
+    registros_copy = copy.deepcopy(registros_pesquisa)
+    for r in registros_copy:
         if str(r.get("id")) in ids_selecionados:
-            if meta != "" and meta != None:
+            if meta != "" and meta is not None:
                 r["meta"] = meta
-            if moedas != "" and moedas != None:
+            if moedas != "" and moedas is not None:
                 r["moedas"] = moedas
-        if r["id_nome_indicador"].lower() == "48 - presença":
-            registros_pesquisa.remove(r)
-    CACHE_TTL = timedelta(minutes=1)
-    await set_cache(cache_key, registros_pesquisa, CACHE_TTL)
+    registros_apos_acao = [dic for dic in registros_copy if dic["id_nome_indicador"].lower() != "48 - presença"]
+    await set_cache(cache_key, registros_apos_acao, CACHE_TTL)
     response = templates.TemplateResponse(
         "_pesquisa.html", 
         {
             "request": request, 
-            "registros": registros_pesquisa,
+            "registros": registros_apos_acao,
             "show_checkbox": True,
             "show_das": True
         }
     )
     response.headers["HX-Trigger"] = json.dumps({
-            "mostrarSucesso": {"value": f"Alteração efetuada com sucesso."}
+            "mostrarSucesso": {"value": f"Meta/Moedas alterados com sucesso!"}
         })
 
     return response
@@ -1205,7 +1014,6 @@ async def update_dmm(
     tipo = next((v for v in form_data.getlist("tipo_pesquisa") if v), None)
     atributo = next((v for v in form_data.getlist("atributo") if v), None)
     page = next((v for v in form_data.getlist("page") if v), None)
-    print(form_data)
     dmm = (form_data.get("dmm_apoio") or "").strip()
     cache_key = generate_cache_key(1, tipo, atributo, page)
     erro = await validation_dmm(dmm)
@@ -1217,22 +1025,25 @@ async def update_dmm(
             detail="Coloque exatamente 5 dmms para efetuar a alteração."
         )
     registros_pesquisa = await get_from_cache(cache_key)
+    if not registros_pesquisa:
+        raise HTTPException(status_code=422, detail="Cache de pesquisa não encontrado ou expirado. Refaça a pesquisa.")
     try:
         if len(registros_pesquisa) > 0:
             if int(registros_pesquisa[0].get("ativo", 0)) != 0 and user.get("role") != "adm":
                 raise HTTPException(status_code=422, detail="Não é possivel alterar o DMM de uma matriz que já tem DA da exop.")
     except ValueError:
         pass
-    if not registros_pesquisa:
-        raise HTTPException(status_code=422, detail="Cache de pesquisa não encontrado ou expirado. Refaça a pesquisa.")
     await update_dmm_bd(registros_pesquisa[0]["atributo"], registros_pesquisa[0]["periodo"], dmm)
     await insert_log_auditoria(registros_pesquisa, None, None, dmm, username)
-    for r in registros_pesquisa:
-        r["possui_dmm"] = "Sim"
-        r["dmm"] = dmm
-    registros_apos_acao = [dic for dic in registros_pesquisa if dic["id_nome_indicador"].lower() != "48 - presença"]
-    CACHE_TTL = timedelta(minutes=1)
-    await set_cache(cache_key, registros_pesquisa, CACHE_TTL)
+    registros_copy = copy.deepcopy(registros_pesquisa)
+    try:
+        for r in registros_copy:
+            r["possui_dmm"] = "SIM"
+            r["dmm"] = dmm
+    except Exception:
+        raise HTTPException(status_code=422, detail=f"Erro ao recuperar a matriz. Refaça a pesquisa e tente novamente.")
+    registros_apos_acao = [dic for dic in registros_copy if dic["id_nome_indicador"].lower() != "48 - presença"]
+    await set_cache(cache_key, registros_apos_acao, CACHE_TTL)
     response =  templates.TemplateResponse(
         "_pesquisa.html", 
         {
@@ -1243,7 +1054,7 @@ async def update_dmm(
         }
     )
     response.headers["HX-Trigger"] = json.dumps({
-            "mostrarSucesso": {"value": f"DMM alterado com sucesso."}
+            "mostrarSucesso": {"value": f"DMM alterado com sucesso!"}
         })
 
     return response
@@ -1303,67 +1114,6 @@ async def export_table(request: Request):
         headers={'Content-Disposition': f'attachment; filename="{filename}"'}
     )
 
-# @router.get("/export_table")
-# async def export_table(request: Request,  atributo: str = Query(...), tipo: str | None = Query(None, alias="duplicar_tipo_pesquisa"), cache_key: str = Query(None, alias="cache_key")):
-#     user = get_current_user(request)
-#     username = user.get("usuario")
-#     if not user:
-#         raise HTTPException(status_code=401, detail="Sessão inválida")
-#     if not tipo:
-#         raise HTTPException(status_code=422, detail="O tipo de pesquisa não foi recebido.")
-    
-#     current_page = request.headers.get("hx-current-url", "desconhecido")
-#     page = None
-#     path = urlparse(current_page).path.lower()
-#     if "cadastro" in path:
-#         page = "cadastro"
-#     else:
-#         page = "demais"
-#     possible_keys = []
-#     if tipo == "m0_all" or tipo == "m1_all" or tipo == "m+1_all":
-#         possible_keys = [f"all_atributos:{tipo}:{username}"]
-#     elif tipo in ["m0_all_apoio", "m1_all_apoio", "m+1_all_apoio"]:
-#         possible_keys = [f"matrizes_administrativas:{tipo}:{username}"]
-#     elif tipo in ["m0_administrativas", "m+1_administrativas"]:
-#         possible_keys = [f"matrizes_administrativas_pg_adm:{tipo}"]
-#     else:
-#         if not atributo:
-#             raise HTTPException(status_code=422, detail="Informe o parâmetro 'atributo' para exportar.")
-#         if cache_key:
-#             possible_keys = [cache_key]
-#         else:
-#             tipo_map = {
-#                 "m0": f"pesquisa_m0:{atributo}:{page}",
-#                 "m1": f"pesquisa_m1:{atributo}:{page}",
-#                 "m+1": f"pesquisa_m+1:{atributo}:{page}"
-#             }
-#             key = tipo_map.get(tipo)
-#             possible_keys = [key]
-
-#     registros_pesquisa = get_from_cache(possible_keys[0])
-
-#     if not registros_pesquisa:
-#         raise HTTPException(status_code=422, detail="Nenhum resultado de pesquisa encontrado no cache. Execute a pesquisa primeiro.")
-
-#     colunas = EXPECTED_COLUMNS
-#     df = pd.DataFrame(registros_pesquisa)
-#     final_cols = [c for c in colunas if c in df.columns]
-#     df = df[final_cols]
-#     colunas_to_drop = ['qualidade', 'da_qualidade', 'data_da_qualidade', 
-#         'planejamento', 'da_planejamento', 'data_da_planejamento']
-#     if "apoio" in tipo:
-#         df = df.drop(columns=colunas_to_drop)
-#     output = BytesIO()
-#     df.to_excel(output, index=False, sheet_name='Pesquisa', engine='openpyxl')
-#     output.seek(0)
-
-#     filename = f"pesquisa_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-#     return StreamingResponse(
-#         output,
-#         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-#         headers={'Content-Disposition': f'attachment; filename="{filename}"'}
-#     )
-
 @router.get("/export_atributos_sem_matriz")
 async def export_atributos_sem_matriz(request: Request):
     user = await get_current_user(request)
@@ -1406,10 +1156,32 @@ async def export_atributos_sem_matriz(request: Request):
         headers={'Content-Disposition': f'attachment; filename="{filename}"'}
     )
 
+@router.get("/export_alteracoes")
+async def export_atributos_sem_matriz(request: Request):
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Sessão inválida")
+
+    registros_pesquisa = await get_all_alterations()
+
+    df = pd.DataFrame(registros_pesquisa)
+
+    output = BytesIO()
+    df.to_excel(output, index=False, sheet_name='Matrizes_Alteradas', engine='openpyxl')
+    output.seek(0)
+
+    filename = f"matrizes_alteradas{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+    )
+
 @router.post("/upload_excel", response_class=HTMLResponse)
 async def upload_excel(request: Request, file: UploadFile = File(...)):
     username = request.cookies.get("username")
     user = await get_current_user(request)
+    role = user.get("role", "default")
     _check_role_or_forbid(user, ["adm"])
     if not file.filename.lower().endswith((".xlsx", ".xls")):
         return Response(
@@ -1463,7 +1235,7 @@ async def upload_excel(request: Request, file: UploadFile = File(...)):
         if col in df.columns:
             df[col] = df[col].apply(to_int_safe)
     records = df.to_dict(orient="records")
-    por_atributo, _ = preprocess_registros(records)
+    por_atributo, por_indicador = preprocess_registros(records)
     periodo = records[0]["periodo"]
     check_duplicity = await check_atribute_and_periodo_bd(por_atributo, periodo)
     if len(check_duplicity) > 0:
@@ -1475,23 +1247,38 @@ async def upload_excel(request: Request, file: UploadFile = File(...)):
                 })
             })
     valid_records = await validation_import_from_excel(records, request)
+    valid_submit = await validation_submit_table(records, username, por_indicador, role)
     if valid_records:
-        return valid_records
-    try:
-        await import_from_excel(records, username)
-    except Exception:
         return Response(
             "",
             headers={
                 "HX-Trigger": json.dumps({
-                    "mostrarErro": {"value": f"Erro ao inserir os registros na tabela Robbyson.dbo.Matriz_Geral."}
+                    "mostrarErro": {"value": valid_records}
+                })
+            })
+    if isinstance(valid_submit, str):
+        return Response(
+            "",
+            headers={
+                "HX-Trigger": json.dumps({
+                    "mostrarErro": {"value": valid_submit}
+                })
+            })    
+    try:
+        await import_from_excel(records, username)
+    except Exception as e:
+        return Response(
+            "",
+            headers={
+                "HX-Trigger": json.dumps({
+                    "mostrarErro": {"value": str(e)}
                 })
             })
     return Response(
     "",
     headers={
         "HX-Trigger": json.dumps({
-            "mostrarSucesso": {"value": f"Todos os registros foram inseridos na tabela Robbyson.dbo.Matriz_Geral."}
+            "mostrarSucesso": {"value": f"Upload efetuado com sucesso!"}
         })
     })
 
@@ -1501,6 +1288,7 @@ async def replicar_registros(request: Request, atributos_replicar: list[str] = F
     validate_origin(request)
     user = None
     matricula = None
+    role = None
     registros = await load_registros(request)
     por_atributo, por_indicador = preprocess_registros(registros)
     
@@ -1528,6 +1316,7 @@ async def replicar_registros(request: Request, atributos_replicar: list[str] = F
         user = await get_current_user(request)
         _check_role_or_forbid(user, ["operacao"])
         matricula = user.get("usuario")
+        role = user.get("role", "default")
     except Exception:
         return Response(
         "",
@@ -1567,7 +1356,7 @@ async def replicar_registros(request: Request, atributos_replicar: list[str] = F
             if "id" in novo:
                 novo["id"] = ""
             novos_registros.append(novo)
-    results = await validation_submit_table(novos_registros, matricula, por_indicador)
+    results = await validation_submit_table(novos_registros, matricula, por_indicador, role)
     if isinstance(results, str):
         return Response(
             "",

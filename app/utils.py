@@ -3,7 +3,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 import pandas as pd
 from app.cache import (
-    get_from_cache, set_cache, load_registros, save_registros, set_session, get_current_user
+    load_registros
 )
 
 def _check_role_or_forbid(user: dict, allowed_roles: list[str]):
@@ -53,9 +53,6 @@ def validate_origin(request: Request):
     if not origin:
         raise HTTPException(status_code=403)
 
-    # if not origin.startswith("https://seusistema.interno"):
-    #     raise HTTPException(status_code=403)
-
 def clean_value(v):
         if isinstance(v, str):
             v = v.strip().replace("–", "-").replace("—", "-")
@@ -74,3 +71,26 @@ def to_int_safe(v):
             return int(float(v))
         except Exception:
             return 0
+
+def generate_cache_key(id, type, atribute, page, username=None):
+    mapping = {1 : f"pesquisa_{type}:{atribute}:{page}", 2 : f"all_atributos:{type}:{username}"}
+    return mapping.get(id)
+
+def validar_horario(valor: str) -> bool:
+    valor = str(valor).strip()
+    if len(valor) != 8:
+        return False
+    
+
+    if valor[2] != ":" or valor[5] != ":":
+        return False
+
+    h = valor[0:2]
+    m = valor[3:5]
+    s = valor[6:8]
+
+
+    if not (h.isdigit() and m.isdigit() and s.isdigit()):
+        return False
+    
+    return True

@@ -1,14 +1,16 @@
+import copy
 from datetime import datetime
 import uuid
 from fastapi.templating import Jinja2Templates
 from fastapi import Response
 from datetime import datetime, date
 import calendar
-from app.connections_db import get_resultados_indicadores_m3, get_all_atributos, get_excecoes_disponibilidade
+from app.connections_db import get_resultados_indicadores_m3, get_all_atributos, get_excecoes_disponibilidade, get_indicadores
+from app.utils import validar_horario
 
 templates = Jinja2Templates(directory="app/templates")
 
-async def validation_submit_table(registros, username, por_indicador):
+async def validation_submit_table(registros, username, por_indicador, role):
     exceptions = await get_excecoes_disponibilidade()
     agora = datetime.now().strftime("%Y-%m-%d")
     moedas = 0
@@ -23,20 +25,21 @@ async def validation_submit_table(registros, username, por_indicador):
     atributo_trade = False
     is_replication = False
     atributo_inicial = registros[0]["atributo"]
+    escala_inicial = registros[0]["escala"]
     resultados_indicadores_m3 = await get_resultados_indicadores_m3(atributo_inicial)
     indicadores_processados = set()
     operational_matrix = registros[0]["tipo_matriz"].lower() != "administração"
     for dic in registros:
-
+        meta_val = dic.get("meta", "")
+        nome_val = dic.get("id_nome_indicador", "").lower()
+        id_indicador = int(dic["id_nome_indicador"].split(" - ")[0])
 
         is_exception_atribute = True if dic["atributo"] in exceptions else False
         try:
             moeda_val = int(dic.get("moedas", "0"))
         except ValueError:
-            return "<p>Moeda deve ser um valor inteiro, valor informado: " + moeda_val + ", para o indicador: " + dic["id_nome_indicador"] + ".</p>"
-        meta_val = dic.get("meta", "")
-        nome_val = dic.get("id_nome_indicador", "").lower()
-        id_indicador = int(dic["id_nome_indicador"].split(" - ")[0])
+            return "<p>Moeda deve ser um valor inteiro, valor informado: " + moeda_val + ", para o indicador: " + dic["id_nome_indicador"] + " e atributo: " + dic["atributo"] +".</p>"
+        
 
 
 
@@ -50,13 +53,15 @@ async def validation_submit_table(registros, username, por_indicador):
         #validações para indicadores semanais, que entram na matriz duplicados com o mesmo valor de moedas
         #serve para que os valores de moedas depois do primeiro não contem
 
-
+        if dic["escala"] != escala_inicial:
+            return "<p>As escalas dos indicadores devem ser iguais, foi identificado um indicador com escala diferente, indicador: " + dic["id_nome_indicador"] + " e atributo: " + dic["atributo"] +".</p>"
         if dic["atributo"] == atributo_inicial:
             if not atributo_trade:
                 moedas += moeda_val
         else:
+            operacional_matrix = dic["tipo_matriz"].lower() != "administração"
             resultados_indicadores_m3 = await get_resultados_indicadores_m3(dic["atributo"])
-            if id_indicador not in resultados_indicadores_m3:
+            if id_indicador not in resultados_indicadores_m3 and operacional_matrix and role != "adm":
                 return f"<p>Não é possível cadastrar o indicador {dic['id_nome_indicador']}, pois ele não tem resultados para os ultimos dois meses+mes atual para o atributo {dic['atributo']}.</p>"
             if moedas != 30 and moedas != 35:
                 return "<p>A soma das moedas do atributo " + dic["atributo"] + " deve ser 30 ou 35, soma atual: " + str(moedas) + ".</p>"
@@ -79,15 +84,15 @@ async def validation_submit_table(registros, username, por_indicador):
         if not is_replication:
             if moeda_val < 0: 
                 return "<p>O valor de moedas deve ser positivo. O indicador " + dic["id_nome_indicador"] + " possui moedas negativas.</p>"
-            if dic["tipo_indicador"] == "Hora":
+            if dic["tipo_indicador"] == "HORA":
                 try:
-                    if len(dic["meta"].split(':')) < 3:
+                    if not validar_horario(str(meta_val)):
                         return "<p>O valor digitado em meta não foi um valor de hora no formato HH:MM:SS.</p>"
                 except Exception as e:
                     return "<p>Digite um valor de hora no formato HH:MM:SS para o indicador " + dic["id_nome_indicador"] + ".</p>"
             else:
                 try:
-                    if dic["tipo_indicador"] == "Inteiro":
+                    if dic["tipo_indicador"] == "INTEIRO":
                         if int(meta_val) <= 0:
                             return "<p>Meta deve ser um número positivo, valor informado: " + meta_val + ", para o indicador: " + dic["id_nome_indicador"] + ".</p>"
                         meta_val = int(meta_val)
@@ -118,12 +123,12 @@ async def validation_submit_table(registros, username, por_indicador):
             if moeda_val > 0 and moeda_val < 3:
                 return "<p>A monetização mínima é de 3 moedas. O indicador " + dic["id_nome_indicador"] + " possui menos de 3 moedas.</p>"
             if nome_val == r"6 - % absenteísmo" and (moeda_val != 0 or meta_val == "" or meta_val == 0):
-                return "<p>Absenteísmo não pode ter moedas e deve ter uma meta diferente de zero.</p>"
+                return "<p>Absenteísmo não pode ter moedas e deve ter uma meta diferente de zero, o atributo " + dic["atributo"] + " não atende esses requisitos</p>"
             if nome_val == r"901 - % disponibilidade":
                 if meta_val != 94 or meta_val != 94.0:
-                    return "<p>Disponibilidade deve ter 94 de meta.</p>"
+                    return "<p>Disponibilidade deve ter 94 de meta, o atributo " + dic["atributo"] + " possui meta diferente de 94.</p>"
                 if (moeda_val < 8) and not is_exception_atribute:
-                    return "<p>Disponibilidade não pode ter menos que 8 moedas.</p>"
+                    return "<p>Disponibilidade não pode ter menos que 8 moedas, o atributo " + dic["atributo"] + " possui menos que 8 moedas.</p>"
                 disp_in = True
                 if moeda_val > 0:
                     disp_mon = True
@@ -134,15 +139,15 @@ async def validation_submit_table(registros, username, por_indicador):
                 if moeda_val > 0:
                     tl_mon = True
             if (nome_val == "25 - pausa nr17" or nome_val == "15 - tempo logado") and (moeda_val != 0 or meta_val != "00:00:00") and not is_exception_atribute:
-                return "<p>O valor de moeda deve ser 0 e o valor de meta para Pausa NR17 e Tempo Logado deve ser 00:00:00.</p>"
+                return "<p>O valor de moeda deve ser 0 e o valor de meta para Pausa NR17 e Tempo Logado deve ser 00:00:00, o atributo " + dic["atributo"] + " não atende esses requisitos.</p>"
             #regras de negocio parte 1
         
 
 
 
 
-        if id_indicador not in resultados_indicadores_m3 and operational_matrix:
-            return f"<p>Não é possível cadastrar o indicador {dic['id_nome_indicador']}, pois ele não tem resultados para os ultimos dois meses+mes atual. Atributo: {dic['atributo']}.</p>"
+        if id_indicador not in resultados_indicadores_m3 and operational_matrix and role != "adm":
+            return f"<p>Não é possível cadastrar o indicador {dic['id_nome_indicador']}, pois ele não tem resultados para os ultimos dois meses+mes atual para o atributo {dic['atributo']}.</p>"
         #regra de negocio que precisa iterar todos os indicadores por todos os atributos e verificar se eles tem resultados tanto na replicação quanto no submit
         #fim do for
 
@@ -151,11 +156,10 @@ async def validation_submit_table(registros, username, por_indicador):
     if len(dates_week_validation) > 0:
         validation_dates_indicator_for_week(registros.copy(), dates_week_validation, por_indicador)
     if not disp_in and operational_matrix:
-        return "<p>Disponibilidade é um indicador obrigatório, por favor adicione-o com 8 ou mais moedas e 94 de meta.</p>"
+        return "<p>Disponibilidade é um indicador obrigatório, por favor adicione-o com 8 ou mais moedas e 94 de meta para o atributo.</p>"
     if disp_in and disp_mon and (nr_mon or tl_mon):
         return "<p>Não é permitido monetizar Pausa NR17 ou Tempo Logado quando Disponibilidade está monetizada.</p>"
     if moedas != 30 and moedas != 35:
-        print(moedas)
         return "<p>A soma de moedas deve ser igual a 30 ou 35.</p>"
     if moedas == 35 and not disp_mon:
         return "<p>Para somar 35 moedas, o indicador de disponibilidade deve estar monetizado!</p>"
@@ -215,117 +219,94 @@ def input_presence(registros, username, agora, atributo, presenca):
     if isinstance(presenca, list):
         appendar = presenca
     try:
-        appendar.append({'atributo': f'{atributo}', 'id_nome_indicador': '48 - Presença', 'meta': '2', 'moedas': 5, 'tipo_indicador': 'Decimal', 'acumulado': 'Não', 'esquema_acumulado': 'Diário',
-                        'tipo_matriz': 'Operacional', 'data_inicio': f'{registros[0]["data_inicio"]}', 'data_fim': f'{registros[0]["data_fim"]}', 'periodo': f'{registros[0]["periodo"]}', 'escala': f'{registros[0]["escala"]}',
-                        'tipo_de_faturamento': 'Controle', 'descricao': f'{registros[0]["descricao"]}', 'ativo': 0, 'chamado': f'{registros[0]["chamado"]}', 'criterio': 'Meta AeC', 'area': 'Planejamento', 'responsavel': '', 'gerente': f'{registros[0]["gerente"]}', 
+        appendar.append({'atributo': f'{atributo}', 'id_nome_indicador': '48 - PRESENÇA', 'meta': '2', 'moedas': 5, 'tipo_indicador': 'DECIMAL', 'acumulado': 'NÃO', 'esquema_acumulado': 'DIÁRIO',
+                        'tipo_matriz': 'OPERACIONAL', 'data_inicio': f'{registros[0]["data_inicio"]}', 'data_fim': f'{registros[0]["data_fim"]}', 'periodo': f'{registros[0]["periodo"]}', 'escala': f'{registros[0]["escala"]}',
+                        'tipo_de_faturamento': 'CONTROLE', 'descricao': f'{registros[0]["descricao"]}', 'ativo': 0, 'chamado': f'{registros[0]["chamado"]}', 'criterio': 'META AEC', 'area': 'PLANEJAMENTO', 'responsavel': '', 'gerente': f'{registros[0]["gerente"]}', 
                         'possui_dmm': f'{registros[0]["possui_dmm"]}', 'dmm': f'{registros[0]["dmm"]}', 'submetido_por': f'{registros[0]["submetido_por"]}', 'data_submetido_por': f'{registros[0]["data_submetido_por"]}', 'qualidade': '', 'da_qualidade': 3, 'data_da_qualidade': '', 
                         'planejamento': '', 'da_planejamento': 3, 'data_da_planejamento': '', 'exop': '', 'da_exop': 0, 'data_da_exop': '', 'justificativa': '', 'da_superintendente': '', 'id': uuid.uuid4()})
     except KeyError:
-        appendar.append({'atributo': f'{atributo}', 'id_nome_indicador': '48 - Presença', 'meta': '2', 'moedas': 5, 'tipo_indicador': 'Decimal', 'acumulado': 'Não', 'esquema_acumulado': 'Diário',
-                    'tipo_matriz': 'Operacional', 'data_inicio': f'{registros[0]["data_inicio"]}', 'data_fim': f'{registros[0]["data_fim"]}', 'periodo': f'{registros[0]["periodo"]}', 'escala': f'{registros[0]["escala"]}',
-                    'tipo_de_faturamento': 'Controle', 'descricao': f'{registros[0]["descricao"]}', 'ativo': 0, 'chamado': '', 'criterio': 'Meta AeC', 'area': 'Planejamento', 'responsavel': '', 'gerente': f'{registros[0]["gerente"]}', 
+        appendar.append({'atributo': f'{atributo}', 'id_nome_indicador': '48 - PRESENÇA', 'meta': '2', 'moedas': 5, 'tipo_indicador': 'DECIMAL', 'acumulado': 'NÃO', 'esquema_acumulado': 'DIÁRIO',
+                    'tipo_matriz': 'OPERACIONAL', 'data_inicio': f'{registros[0]["data_inicio"]}', 'data_fim': f'{registros[0]["data_fim"]}', 'periodo': f'{registros[0]["periodo"]}', 'escala': f'{registros[0]["escala"]}',
+                    'tipo_de_faturamento': 'CONTROLE', 'descricao': f'{registros[0]["descricao"]}', 'ativo': 0, 'chamado': '', 'criterio': 'META AEC', 'area': 'PLANEJAMENTO', 'responsavel': '', 'gerente': f'{registros[0]["gerente"]}', 
                     'possui_dmm': f'{registros[0]["possui_dmm"]}', 'dmm': f'{registros[0]["dmm"]}', 'submetido_por': f'{username}', 'data_submetido_por': f'{agora}', 'qualidade': '', 'da_qualidade': 3, 'data_da_qualidade': '', 
                     'planejamento': '', 'da_planejamento': 3, 'data_da_planejamento': '', 'exop': '', 'da_exop': 0, 'data_da_exop': '', 'justificativa': '', 'da_superintendente': '', 'id': uuid.uuid4()})
 
 async def validation_import_from_excel(registros, request):
-    registros_copia = registros
-    retorno = []
+    periodo = registros[0].get("periodo", "")
     atributos = await get_all_atributos()
-    for i in registros_copia: 
-        if i["atributo"] not in atributos:
-            i["descricao"] = "Erro de atributo,"
-            retorno.append(i)
-            continue
-        if len(i["id_nome_indicador"].split(" - ")) != 2:
-            i["descricao"] = "Erro de indicador,"
-            retorno.append(i)
-            continue
-        if i["tipo_indicador"] == "Hora":
-            try:
-                if len(i["meta"].split(":")) != 3:
-                    i["descricao"] = "Erro de meta para indicador tipo hora,"
-                    retorno.append(i)
-                    continue
-            except ValueError:
-                i["descricao"] = "Erro de valor meta,"
-                retorno.append(i)
-                continue
-        elif i["tipo_indicador"] == "Inteiro":
-            try:
-                int(i["meta"])
-            except ValueError:
-                i["descricao"] = "Erro de meta para indicador tipo hora,"
-                retorno.append(i)
-                continue
-        elif i["tipo_indicador"] == "Decimal":
-            try:
-                float(i["meta"])
-            except ValueError:
-                i["descricao"] = "Erro de valor meta,"
-                retorno.append(i)
-                continue
-        elif i["tipo_indicador"] == "Percentual":
-            try:
-                float(i["meta"])
-            except ValueError:
-                i["descricao"] = "Erro de valor meta,"
-                retorno.append(i)
-                continue
-        try:
-            int(i["moedas"])
-        except ValueError:
-            i["descricao"] = "Erro de valor moedas,"
-            retorno.append(i)
-            continue
-
-    html_content = templates.TemplateResponse(
-    "_pesquisa.html", 
-    {"request": request, "registros": retorno} 
-    )
-    response = Response(content=html_content.body, media_type="text/html")
-    response.headers["HX-Trigger"] = '{"mostrarSucesso": "xImportx: A validação encontrou erros, veja-os na primeira tabela abaixo!"}'
-    if len(retorno) > 0:
-        return response
+    indicadores = [i.get("id") + " - " + i.get("text") for i in await get_indicadores()]
+    for i, v in enumerate(registros): 
+        if v.get("periodo", "") != periodo:
+            return f"O período deve ser o mesmo para todos os registros, período encontrado diferente: {v.get('periodo', '')}, Linha {i+2}."
+        if v["atributo"] not in atributos:
+            return f"O atributo {v['atributo']} não é válido, por favor corrija o valor e tente novamente, Linha {i+2}."
+        if v["id_nome_indicador"] not in indicadores:
+            return f"O id_nome_indicador {v['id_nome_indicador']} não é válido, por favor corrija o valor e tente novamente. Linha {i+2}."
+        if v["possui_dmm"] == "SIM":
+            if len(v.get("dmm", "").split(",")) != 5 or (v.get("dmm", "") == "" or v.get("dmm", "") is None):
+                return f"Indicador com DMM deve conter exatamente 5 dmms separados por vírgula O atributo {v['atributo']} possui {len(v.get('dmm', '').split(','))} dmms."
+        elif v["possui_dmm"] == "NAO":
+            if v.get("dmm", "") != "" and v.get("dmm", "") is not None:
+                return f"Se 'Não' for colocado no campo 'possui_dmm' o campo 'dmm' deve ficar vazio, Linha {i+2}."
+        else:
+            return f"O campo 'possui_dmm' deve ser preenchido com 'SIM' ou 'NAO', valor encontrado: {v['possui_dmm']}, Linha {i+2}."
+        if v["tipo_indicador"] not in ["HORA", "INTEIRO", "DECIMAL", "PERCENTUAL"]:
+            return f"Tipo de indicador inválido, valor encontrado: {v['tipo_indicador']}, Linha {i+2}. Os tipos válidos são: HORA, INTEIRO, DECIMAL e PERCENTUAL."
+        if v["acumulado"] == "SIM":
+            if v["esquema_acumulado"] != "SEMANAL":
+                return f"Esquema acumulado inválido para indicador acumulado, valor encontrado: {v['esquema_acumulado']}, Linha {i+2}. O esquema válido é: SEMANAL."
+        elif v["acumulado"] == "NAO":
+            if v["esquema_acumulado"] not in ["MENSAL", "DIARIO"]:
+                return f"Esquema acumulado inválido para indicador não acumulado, valor encontrado: {v['esquema_acumulado']}, Linha {i+2}. O esquema válido é: DIARIO ou MENSAL."
+        else:
+            return f"O campo 'acumulado' deve ser preenchido com 'SIM' ou 'NAO', valor encontrado: {v['acumulado']}, Linha {i+2}."
+        if v["tipo_matriz"] not in ["ADMINISTRAÇÃO", "OPERACIONAL"]:
+            return f"Tipo de matriz inválido, valor encontrado: {v['tipo_matriz']}, Linha {i+2}. Os tipos válidos são: Administração e Operacional."
+        if v["escala"] not in ["5X2", "6X1"]:
+            return f"Escala invária, valor encontrado: {v['escala']}, Linha {i+2}. As escalas válidas são: 5X2 e 6X1."
+        if v["tipo_de_faturamento"] not in ["ONUS", "ONUS E BONUS", "RECEITA", "RELACIONAMENTO", "CONTROLE"]:
+            return f"Tipo de faturamento inválido, valor encontrado: {v['tipo_de_faturamento']}, Linha {i+2}. Os tipos válidos são: ONUS, ONUS E BONUS, RECEITA, RELACIONAMENTO e CONTROLE."
+        if v["criterio"] not in ["META AEC", "META SMART", "META CLIENTE", "META FORECAST"]:
+            return f"Criterio inválido, valor encontrado: {v['criterio']}, Linha {i+2}. Os critérios válidos são: META AEC, META SMART, META CLIENTE e META FORECAST."
     return None
 
 async def validation_meta_moedas(registros, meta, moedas, role):
     tipo = registros["tipo_indicador"]
-    # area = registros.get("area", "").lower()
-    # if "qualidade" in role.lower() and (area != "qualidade" and area != ""):
-    #     return f"xPesquisax: Usuário com perfil de Qualidade não pode alterar registros de outras áreas! indicador:{registros["id_nome_indicador"]}"
-    # elif "planejamento" in role.lower() and (area != "planejamento" and area != ""):
-    #     return f"xPesquisax: Usuário com perfil de Planejamento não pode alterar registros de outras áreas! indicador:{registros["id_nome_indicador"]}"
     if moedas != "" and moedas != None:
         if int(moedas) < 3 and int(moedas) > 0:
             return f"A monetização mínima é de 3 moedas. O indicador {registros['id_nome_indicador']} possui {moedas} moedas."
-    if registros["id_nome_indicador"].lower() == r"901 - % disponibilidade" and int(meta) != 94:
-        return f"Não é permitido alterar a meta do indicador 901 - % disponibilidade!"
-    if tipo == "Hora":
+    
+        if registros["id_nome_indicador"].lower() == r"901 - % disponibilidade" and int(moedas) < 8:
+            return f"A monetização mínima do indicador 901 % Disponibilidade é de 8 moedas."
         try:
-            if len(meta.split(":")) != 3:
-                return f"Erro de meta para indicador tipo hora! indicador:{registros["id_nome_indicador"]}, meta informada:{meta}. O modelo correto é HH:MM:SS"
-        except Exception:
-            return f"Erro de valor meta! indicador:{registros["id_nome_indicador"]}, meta:{meta}"
-    elif tipo == "Inteiro":
-        try:
-            int(meta)
-        except Exception:
-            return f"Meta deve ser um valor inteiro! indicador:{registros["id_nome_indicador"]}, meta informada:{meta}"
-    elif tipo == "Decimal":
-        try:
-            float(meta)
-        except Exception:
-            return f"Meta deve ser um valor decimal! indicador:{registros["id_nome_indicador"]}, meta informada:{meta}"
-    elif tipo == "Percentual":
-        try:
-            float(meta)
-        except Exception:
-            return f"Meta deve ser um número válido! indicador:{registros["id_nome_indicador"]}, meta informada:{meta}"
-    try:
-        if moedas != "" and moedas != None:
             int(moedas)
-    except Exception:
-        return f"Moedas deve ser um número inteiro! indicador: {registros["id_nome_indicador"]}, moedas informada: {moedas}"
+        except Exception:
+            return f"Moedas deve ser um número inteiro! indicador: {registros['id_nome_indicador']}, moedas informada: {moedas}"
+    if meta != "" and meta != None:
+        if registros["id_nome_indicador"].lower() == r"901 - % disponibilidade" and int(meta) != 94:
+            return f"Não é permitido alterar a meta do indicador 901 - % disponibilidade!"
+        if tipo == "HORA":
+            try:
+                if len(meta.split(":")) != 3:
+                    return f"Erro de meta para indicador tipo hora! indicador:{registros['id_nome_indicador']}, meta informada:{meta}. O modelo correto é HH:MM:SS"
+            except Exception:
+                return f"Erro de valor meta! indicador:{registros['id_nome_indicador']}, meta:{meta}"
+        elif tipo == "INTEIRO":
+            try:
+                int(meta)
+            except Exception:
+                return f"Meta deve ser um valor inteiro! indicador:{registros['id_nome_indicador']}, meta informada:{meta}"
+        elif tipo == "DECIMAL":
+            try:
+                float(meta)
+            except Exception:
+                return f"Meta deve ser um valor decimal! indicador:{registros['id_nome_indicador']}, meta informada:{meta}"
+        elif tipo == "PERCENTUAL":
+            try:
+                float(meta)
+            except Exception:
+                return f"Meta deve ser um número válido! indicador:{registros['id_nome_indicador']}, meta informada:{meta}"
+    
     return None
 
 async def validation_dmm(dmm):
@@ -336,18 +317,3 @@ async def validation_dmm(dmm):
     except Exception as e:
         return f"Erro na validação de dmm: {e}"
     return None
-
-def validation_datas(data_inicio_bd, data_fim_bd, data_inicio_sbmit, data_fim_submit):
-    data_original = datetime.strptime(data_inicio_sbmit, '%Y-%m-%d').date()
-    ano = data_original.year
-    mes = data_original.month
-    _, ultimo_dia_do_mes = calendar.monthrange(ano, mes) 
-    ultimo_dia_data = date(ano, mes, ultimo_dia_do_mes)
-    ultimo_dia_str = ultimo_dia_data.strftime('%Y-%m-%d')
-    if data_inicio_sbmit > data_inicio_bd and data_inicio_sbmit > data_fim_bd and data_inicio_sbmit <= data_fim_submit and data_inicio_sbmit <= ultimo_dia_str:
-        if data_fim_submit > data_inicio_bd and data_fim_submit > data_fim_bd and data_fim_submit <= ultimo_dia_str:
-            pass
-        else:
-            return True
-    else:
-        return True
