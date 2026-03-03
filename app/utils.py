@@ -2,9 +2,14 @@ from fastapi import APIRouter, Request, Form, Query, HTTPException, Response, st
 from collections import defaultdict
 from datetime import datetime, timedelta
 import pandas as pd
+import time
 from app.cache import (
     load_registros
 )
+
+LOGIN_ATTEMPTS = 5
+LOGIN_WINDOW = 60        # 60 segundos
+LOGIN_BLOCK_TIME = 300   # 5 minutos
 
 def _check_role_or_forbid(user: dict, allowed_roles: list[str]):
     """
@@ -94,3 +99,34 @@ def validar_horario(valor: str) -> bool:
         return False
     
     return True
+
+
+async def check_login_rate_limit(redis, ip: str, username: str):
+
+    ip_key = f"login:ip:{ip}"
+    user_key = f"login:user:{username}"
+    block_key = f"login:block:{ip}"
+
+    # Verifica se IP está bloqueado
+    if await redis.exists(block_key):
+        raise HTTPException(
+            status_code=429,
+            detail="Muitas tentativas. Tente novamente mais tarde."
+        )
+
+    # Incrementa contador IP
+    ip_attempts = await redis.incr(ip_key)
+    if ip_attempts == 1:
+        await redis.expire(ip_key, LOGIN_WINDOW)
+
+    # Incrementa contador usuário
+    user_attempts = await redis.incr(user_key)
+    if user_attempts == 1:
+        await redis.expire(user_key, LOGIN_WINDOW)
+
+    if ip_attempts > LOGIN_ATTEMPTS or user_attempts > LOGIN_ATTEMPTS:
+        await redis.set(block_key, "1", ex=LOGIN_BLOCK_TIME)
+        raise HTTPException(
+            status_code=429,
+            detail="Muitas tentativas. IP temporariamente bloqueado."
+        )

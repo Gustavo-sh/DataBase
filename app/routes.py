@@ -26,7 +26,7 @@ from app.connections_db import (
     get_factibilidade, insert_log_auditoria,check_atribute_and_periodo_bd,get_pendencias_apoio,
 )
 from app.validations import validation_submit_table, validation_import_from_excel, validation_meta_moedas, validation_dmm
-from app.utils import _check_registro_scope, _check_role_or_forbid, preprocess_registros, require_htmx, validate_origin, clean_value, to_int_safe, generate_cache_key
+from app.utils import _check_registro_scope, _check_role_or_forbid, preprocess_registros, require_htmx, validate_origin, clean_value, to_int_safe, generate_cache_key, check_login_rate_limit
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -64,7 +64,11 @@ def home():
     return RedirectResponse("/login", status_code=303)
 
 @router.get("/login")
-def login_page(request: Request, msg: Optional[str] = Query(None), erro: Optional[str] = Query(None)):
+async def login_page(request: Request, msg: Optional[str] = Query(None), erro: Optional[str] = Query(None)):
+    username = request.cookies.get("username")
+    client_ip = request.headers.get("X-Forwarded-For") or request.client.host
+
+    await check_login_rate_limit(redis_client, client_ip, username)
     return templates.TemplateResponse("login.html", {"request": request, "msg": msg, "erro": erro})
 
 @router.post("/login")
@@ -73,6 +77,9 @@ async def login(
     username: str = Form(...),
     password: str = Form(...)
 ):
+    client_ip = request.headers.get("X-Forwarded-For") or request.client.host
+
+    await check_login_rate_limit(redis_client, client_ip, username)
     user = await get_user_bd(username)
 
     if not user:
@@ -187,6 +194,7 @@ async def matriz_page(request: Request):
     indicadores = await get_indicadores()
     lista_atributos = await get_atributos_matricula(username)
     atributos = sorted(lista_atributos, key=lambda item: item.get('atributo') or '')
+    registros = await load_registros(request)
     names = await get_names()
     name = names.get(username)
     matrizes_alteradas = await get_matrizes_alteradas_apoio(name)
@@ -203,7 +211,8 @@ async def matriz_page(request: Request):
         "atributos": atributos,
         "role_": user.get("role"),
         "area": area,
-        "matrizes_alteradas": matrizes_alteradas
+        "matrizes_alteradas": matrizes_alteradas,
+        "registros": registros
     })
 
 @router.get("/matriz/apoio")
@@ -243,6 +252,7 @@ async def index_apoio_cadastro(request: Request):
         return RedirectResponse("/login", status_code=303)
     _check_role_or_forbid(user, ["apoio qualidade", "apoio planejamento", "adm"])
     username = request.cookies.get("username")
+    registros = await load_registros(request)
     indicadores = await get_indicadores()
     area = None
     funcao = await get_funcao(username)
@@ -258,7 +268,8 @@ async def index_apoio_cadastro(request: Request):
         "username": username,
         "atributos": atributos,
         "role_": user.get("role"),
-        "area": area
+        "area": area,
+        "registros": registros
     })
 
 @router.get("/matriz/adm")
@@ -274,6 +285,7 @@ async def index_adm(request: Request):
     
     indicadores = await get_indicadores()
     atributos = await get_atributos_adm()
+    registros = await load_registros(request)
     area = None
     funcao = await get_funcao(username)
     if "qualidade" in funcao.lower():
@@ -286,7 +298,8 @@ async def index_adm(request: Request):
         "username": username,
         "atributos": atributos,
         "role_": user.get("role"),
-        "area": area
+        "area": area,
+        "registros": registros
     })
 
 @router.get("/matriz/adm/acordo")
